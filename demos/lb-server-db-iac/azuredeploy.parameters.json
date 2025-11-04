@@ -1,0 +1,15 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "location": { "value": "eastus2" },
+    "vmAdminUsername": { "value": "azureuser" },
+    "sshPublicKey": { "value": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKSQw9tZCGd+x2jBUpo6j5QAFhMaozksCaUGeN9nbZSg seliot@arpio.io" },
+    "vmSku": { "value": "Standard_B1s" },
+    "instanceCount": { "value": 2 },
+    "sqlServerName": { "value": "app-sql-ef39639d" },
+    "sqlAdminLogin": { "value": "sqladminuser" },
+    "sqlAdminPassword": { "value": "Pa$$w0rd123!" },
+    "sqlDbName": { "value": "appdb" }
+  }
+}
