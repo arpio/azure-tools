@@ -12,7 +12,7 @@ The deployed workload looks like this:
 
 ## Deployment
 
-Ensure you are in the correct subsscription
+Ensure you are in the correct subscription
 ```bash
 az account set --subscription <subscription_id>
 ```
