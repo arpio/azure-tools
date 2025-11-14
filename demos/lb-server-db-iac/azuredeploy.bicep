@@ -6,15 +6,19 @@ param vmSku string
 param instanceCount int = 2
 param baseName string = 'app-sql'
 param sqlAdminLogin string
-@secure()
-param sqlAdminPassword string
 param sqlDbName string
+
+// This is NOT a good way to generate a password for production use!
+// In production we would generate it outside this template and put it in the Key Vault
+@secure()
+param sqlAdminPassword string = 'Aa1!${uniqueString(resourceGroup().id) }'
 
 // Variables
 var vnetName   = 'vnet-app'
 var subnetName = 'subnet-app'
 var nsgName    = 'nsg-app'
 var pipName    = 'pip-lb'
+var pipDomainNameLabel = 'pip-lb-${uniqueString(resourceGroup().id)}'
 var lbName     = 'lb-app'
 var bepoolName = 'lb-be'
 var probeName  = 'http-probe'
@@ -83,7 +87,7 @@ resource pip 'Microsoft.Network/publicIPAddresses@2023-11-01' = {
   properties: {
     publicIPAllocationMethod: 'Static'
     dnsSettings: {
-      domainNameLabel: 'seliot' 
+      domainNameLabel: pipDomainNameLabel 
     }
   }
 }
@@ -370,7 +374,42 @@ echo "Hello from $(hostname)" > /var/www/html/index.html
 }
 
 // ---------- AZURE SQL: SERVER, FIREWALL RULES, DATABASE ----------
-resource sql 'Microsoft.Sql/servers@2021-11-01' = {
+
+// Key-vault
+// Must use RBAC access
+resource sqlKv 'Microsoft.KeyVault/vaults@2025-05-01' = {
+  name: 'sql-server-passwords-kv'
+  location: location
+  properties: {
+    sku: { name: 'standard', family: 'A' }
+    tenantId: subscription().tenantId
+    enableRbacAuthorization: true
+    accessPolicies: null
+    enabledForDeployment: false
+    enabledForTemplateDeployment: true
+  }
+}
+
+// Secret in key-vault
+resource sqlAdminPwdSecret 'Microsoft.KeyVault/vaults/secrets@2025-05-01' = {
+  name: sqlServerName
+  parent: sqlKv
+  properties: {
+    value: sqlAdminPassword
+  }
+}
+
+// The following will NOT work here, because I am creating the K-V secret
+// here.  In the future we would do this 2-stage. First create teh K-V and
+// secret outside the template, then deploy the template that reads it.
+
+// Read the secret value from Key Vault
+// var sqlAdminPasswordFromKv = listSecret(
+//   resourceId('Microsoft.KeyVault/vaults/secrets', sqlKv.name, sqlServerName),
+//   '2016-10-01'  // Secret management API version
+// ).value
+
+resource sql 'Microsoft.Sql/servers@2023-08-01' = {
   name: sqlServerName
   location: location
   properties: {
@@ -379,32 +418,36 @@ resource sql 'Microsoft.Sql/servers@2021-11-01' = {
     publicNetworkAccess: 'Enabled'
     version: '12.0'
   }
+  // add tag sql-admin-password-secret with value pointing to the URL of the secret
+  tags: {
+    // Arpio requires this
+    // NOTE: must be computable at start of deployment, so we
+    // construct the "latest" secret URL (no version segment)
+    'sql-admin-password-secret': 'https://${sqlKv.name}.${environment().suffixes.keyvaultDns}/secrets/${sqlServerName}'
+  }
 }
 
-resource fwAllowAzure 'Microsoft.Sql/servers/firewallRules@2021-11-01' = {
-  name: '${sqlServerName}/AllowAllAzureServices'
+resource fwAllowAzure 'Microsoft.Sql/servers/firewallRules@2023-08-01' = {
+  name: 'AllowAllAzureServices'
+  parent: sql
   properties: {
     startIpAddress: '0.0.0.0'
     endIpAddress: '0.0.0.0'
   }
-  dependsOn: [
-    sql
-  ]
 }
 
-resource fwAllowAllIP 'Microsoft.Sql/servers/firewallRules@2021-11-01' = {
-  name: '${sqlServerName}/AllowAllIP'
+resource fwAllowAllIP 'Microsoft.Sql/servers/firewallRules@2023-08-01' = {
+  name: 'AllowAllIP'
+  parent: sql
   properties: {
     startIpAddress: '0.0.0.0'
     endIpAddress: '255.255.255.255'
   }
-  dependsOn: [
-    sql
-  ]
 }
 
-resource sqldb 'Microsoft.Sql/servers/databases@2021-11-01' = {
-  name: '${sqlServerName}/${sqlDbName}'
+resource sqldb 'Microsoft.Sql/servers/databases@2023-08-01' = {
+  name: sqlDbName
+  parent: sql
   location: location
   sku: {
     name: 'S0'
@@ -415,9 +458,6 @@ resource sqldb 'Microsoft.Sql/servers/databases@2021-11-01' = {
     collation: 'SQL_Latin1_General_CP1_CI_AS'
     maxSizeBytes: 268435456000
   }
-  dependsOn: [
-    sql
-  ]
 }
 
 

@@ -10,4 +10,4 @@ param instanceCount = 2
 param baseName = 'app-sql'
 param sqlAdminLogin = 'sqladminuser'
 param sqlDbName = 'appdb'
-param sqlAdminPassword = 'Pa$$w0rd123!'
+

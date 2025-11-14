@@ -2,7 +2,7 @@
 
 This folder contains Infrastructure as Code (IaC) configuration to deploy a **Load Balancer - Server - Database** stack.
 
-Both ARM and Bicep templates are included here. They both should produce the same resources when used. 
+**Bicep templates are being kept up to date.** ARM templates are here for historical purposes only
 
 The deployed workload looks like this:
 ![architecture](images/lb-server-db.png)
@@ -22,15 +22,6 @@ If this is a new deployment and you are using a new resource group, then create 
 az group create -n <resource_group_name> -l <region>
 ```
 
-ARM
-```bash
-az deployment group create \
-  --name lb-server-db-arm \
-  --resource-group <resource_group_name> \
-  --template-file azuredeploy.json \
-  --parameters @azuredeploy.parameters.json
-```
-
 Bicep
 ```bash
 az deployment group create \
@@ -40,3 +31,11 @@ az deployment group create \
   --parameters azuredeploy.bicepparam
 ```
 
+ARM
+```bash
+az deployment group create \
+  --name lb-server-db-arm \
+  --resource-group <resource_group_name> \
+  --template-file azuredeploy.json \
+  --parameters @azuredeploy.parameters.json
+```
