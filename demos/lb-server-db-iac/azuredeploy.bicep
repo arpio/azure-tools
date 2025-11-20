@@ -24,6 +24,9 @@ var bepoolName = 'lb-be'
 var probeName  = 'http-probe'
 var sqlServerName = toLower('${baseName}-${uniqueString(subscription().id, resourceGroup().id, deployment().name)}')
 
+// Build the URL once (this creates an implicit dependency on sqlKv)
+var kvSecretUrl = 'https://${sqlKv.name}${environment().suffixes.keyvaultDns}/secrets/${sqlServerName}'
+
 
 // NSG
 resource nsg 'Microsoft.Network/networkSecurityGroups@2023-11-01' = {
@@ -423,7 +426,7 @@ resource sql 'Microsoft.Sql/servers@2023-08-01' = {
     // Arpio requires this
     // NOTE: must be computable at start of deployment, so we
     // construct the "latest" secret URL (no version segment)
-    'arpio-config:sql-admin-password-secret': 'https://${sqlKv.name}.${environment().suffixes.keyvaultDns}/secrets/${sqlServerName}'
+    'arpio-config:sql-admin-password-secret': kvSecretUrl
   }
 }
 
@@ -465,3 +468,4 @@ resource sqldb 'Microsoft.Sql/servers/databases@2023-08-01' = {
 output loadBalancerPublicIP string = pip.properties.ipAddress
 output loadBalancerFQDN string = pip.properties.dnsSettings.fqdn
 output sqlServerFqdn string = sql.properties.fullyQualifiedDomainName
+output sqlAdminPwdSecretUrl string = kvSecretUrl
