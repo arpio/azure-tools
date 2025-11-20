@@ -418,12 +418,12 @@ resource sql 'Microsoft.Sql/servers@2023-08-01' = {
     publicNetworkAccess: 'Enabled'
     version: '12.0'
   }
-  // add tag sql-admin-password-secret with value pointing to the URL of the secret
+  // add tag arpio-config:sql-admin-password-secret with value pointing to the URL of the secret
   tags: {
     // Arpio requires this
     // NOTE: must be computable at start of deployment, so we
     // construct the "latest" secret URL (no version segment)
-    'sql-admin-password-secret': 'https://${sqlKv.name}.${environment().suffixes.keyvaultDns}/secrets/${sqlServerName}'
+    'arpio-config:sql-admin-password-secret': 'https://${sqlKv.name}.${environment().suffixes.keyvaultDns}/secrets/${sqlServerName}'
   }
 }
 
