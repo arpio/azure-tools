@@ -22,7 +22,9 @@ var pipDomainNameLabel = 'pip-lb-${uniqueString(resourceGroup().id)}'
 var lbName     = 'lb-app'
 var bepoolName = 'lb-be'
 var probeName  = 'http-probe'
-var sqlServerName = toLower('${baseName}-${uniqueString(subscription().id, resourceGroup().id, deployment().name)}')
+var uniqueSuffix = uniqueString(subscription().id, resourceGroup().id, deployment().name) // 13 chars
+var sqlServerName = toLower('${baseName}-${uniqueSuffix}')
+var kvName = 'kv-psswd-${uniqueSuffix}'
 
 // Build the URL once (this creates an implicit dependency on sqlKv)
 var kvSecretUrl = 'https://${sqlKv.name}${environment().suffixes.keyvaultDns}/secrets/${sqlServerName}'
@@ -381,7 +383,7 @@ echo "Hello from $(hostname)" > /var/www/html/index.html
 // Key-vault
 // Must use RBAC access
 resource sqlKv 'Microsoft.KeyVault/vaults@2025-05-01' = {
-  name: 'sql-server-passwords-kv'
+  name: kvName
   location: location
   properties: {
     sku: { name: 'standard', family: 'A' }
@@ -453,9 +455,9 @@ resource sqldb 'Microsoft.Sql/servers/databases@2023-08-01' = {
   parent: sql
   location: location
   sku: {
-    name: 'S0'
-    tier: 'Standard'
-    capacity: 10
+    name: 'GP_Gen5_2'
+    tier: 'GeneralPurpose'
+    capacity: 2
   }
   properties: {
     collation: 'SQL_Latin1_General_CP1_CI_AS'
