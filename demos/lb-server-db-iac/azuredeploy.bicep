@@ -423,12 +423,12 @@ resource sql 'Microsoft.Sql/servers@2023-08-01' = {
     publicNetworkAccess: 'Enabled'
     version: '12.0'
   }
-  // add tag arpio-config:sql-admin-password-secret with value pointing to the URL of the secret
+  // add tag arpio-config:admin-password-secret with value pointing to the URL of the secret
   tags: {
     // Arpio requires this
     // NOTE: must be computable at start of deployment, so we
     // construct the "latest" secret URL (no version segment)
-    'arpio-config:sql-admin-password-secret': kvSecretUrl
+    'arpio-config:admin-password-secret': kvSecretUrl
   }
 }
 
