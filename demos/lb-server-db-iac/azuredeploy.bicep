@@ -25,6 +25,8 @@ var probeName  = 'http-probe'
 var uniqueSuffix = uniqueString(subscription().id, resourceGroup().id, deployment().name) // 13 chars
 var sqlServerName = toLower('${baseName}-${uniqueSuffix}')
 var kvName = 'kv-psswd-${uniqueSuffix}'
+var isArmVm = contains(toLower(vmSku), '_p') || contains(toLower(vmSku), 'ps_v2')
+var ubuntuSku = isArmVm ? '22_04-lts-arm64' : '22_04-lts'
 
 // Build the URL once (this creates an implicit dependency on sqlKv)
 var kvSecretUrl = 'https://${sqlKv.name}${environment().suffixes.keyvaultDns}/secrets/${sqlServerName}'
@@ -158,7 +160,7 @@ resource vmss 'Microsoft.Compute/virtualMachineScaleSets@2023-09-01' = {
         imageReference: {
           publisher: 'Canonical'
           offer: '0001-com-ubuntu-server-jammy'
-          sku: '22_04-lts'
+          sku: ubuntuSku
           version: 'latest'
         }
         osDisk: {
@@ -334,7 +336,7 @@ resource vmStandalone 'Microsoft.Compute/virtualMachines@2023-09-01' = {
       imageReference: {
         publisher: 'Canonical'
         offer: '0001-com-ubuntu-server-jammy'
-        sku: '22_04-lts'
+        sku: ubuntuSku
         version: 'latest'
       }
       osDisk: {
