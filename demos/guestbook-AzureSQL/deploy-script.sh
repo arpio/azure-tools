@@ -23,60 +23,50 @@ echo " "
 
 echo "Enter WINDOWS VM admin password"
 echo "(The password length must be between 12 and 123. Password must have the 3 of the following: 1 lower case character, 1 upper case character, 1 number and 1 special character)"
-read -sp "Enter value: " ADMIN_PASSWORD
-echo " "
+read -s -p "Enter value: " ADMIN_PASSWORD
+echo ""
 
-read -sp "Enter SQL admin password: " SQL_PASSWORD
-echo " "
+read -s -p "Enter SQL admin password: " SQL_PASSWORD
+echo ""
 
+#
+# -- ensure that the specified VM Size/Sku is available in the specific region
 LOCATION="westus2"
+VM_SIZE="Standard_B2as_v2"
 
 RAND=$RANDOM
 
 BICEP_FILE="sqlvm-subscription.bicep"
 
-VM_NAME="starkvm-$RAND"
+VM_NAME="starkvm-${RESOURCE_GROUP}"
 ADMIN_USER="azureuser"
 
-SQL_ADMIN="sqladmin"
+SQL_ADMIN="sqladmin-$RAND"
 SQL_DB="GuestbookDb"
 SQL_SERVER="starksql$RAND"
 
-VNET_NAME="stark-vnet-$RAND"
-SUBNET_NAME="stark-subnet"
-IP_NAME="stark-public-ip-$RAND"
-NIC_NAME="stark-nic-$RAND"
-NSG_NAME="stark-nsg-$RAND"
-KV_NAME="stark-kv-$RAND"
 
 fail() { echo "ERROR: $1" >&2; }
 step() { echo "$1"; }
 
-echo "password: $ADMIN_PASSWORD"
 #
 # create resources
 # TODO: call bicep
 az deployment sub create \
-  --location $LOCATION \
-  --template-file $BICEP_FILE \
-  --name $RESOURCE_GROUP
+  --location "$LOCATION" \
+  --template-file "$BICEP_FILE" \
+  --name "$RESOURCE_GROUP" \
   --parameters \
-    resourceGroupName=$RESOURCE_GROUP \
-    location=$LOCATION \
-    vmName=$VM_NAME \
-    adminUsername=$ADMIN_USER \
+    location="$LOCATION" \
+    resourceGroupName="$RESOURCE_GROUP" \
+    adminUsername="$ADMIN_USER" \
     adminPassword="$ADMIN_PASSWORD" \
-    sqlAdminUsername=$SQL_ADMIN \
+    sqlAdminUsername="$SQL_ADMIN" \
     sqlAdminPassword="$SQL_PASSWORD" \
-    sqlServerName=$SQL_SERVER \
-    sqlDatabaseName=$SQL_DB \
-    vnetName=$VNET_NAME \
-    subnetName=$SUBNET_NAME \
-    ipName=$IP_NAME \
-    nicName=$NIC_NAME \
-    nsgName=$NSG_NAME \
-    keyVaultName=$KV_NAME
-
+    vmName="$VM_NAME" \
+    vmSize="$VM_SIZE" \
+    sqlServerName="$SQL_SERVER" 
+  
 #
 # --------- Create Guestbook table from Cloud Shell ---------
 step "Creating Guestbook table from Cloud Shell..."

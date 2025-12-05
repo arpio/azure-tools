@@ -1,10 +1,13 @@
 // Parameters
 @description('Admin username for the VM')
-param adminUsername string = 'arpiouser'
+param adminUsername string
 
 @secure()
 @description('Admin password for the VM')
 param adminPassword string
+
+@description('SQL Admin User')
+param sqlAdminUsername string
 
 @secure()
 @description('SQL Server admin password')
@@ -29,7 +32,11 @@ var subnetName = 'default'
 var nsgName = 'demo-sqlvm-nsg'
 var publicIPName = 'demo-sqlvm-pip'
 var nicName = '${vmName}-nic'
-var keyVaultName = toLower('${vmName}-kv-${uniqueString(resourceGroup().id)}')
+
+var tmpKeyVaultName = toLower('${vmName}-kv-${uniqueString(resourceGroup().id)}')
+var keyVaultName = length(tmpKeyVaultName) > 24 
+  ? substring(tmpKeyVaultName, 0, 24) 
+  : tmpKeyVaultName
 
 // Key Vault
 resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
@@ -169,7 +176,7 @@ resource sqlServer 'Microsoft.Sql/servers@2021-11-01' = {
     'arpio-config:admin-password-secret': sqlAdminSecret.name
   }
   properties: {
-    administratorLogin: 'sqladmin'
+    administratorLogin: sqlAdminUsername
     administratorLoginPassword: sqlAdminPassword
     publicNetworkAccess: 'Enabled'
     version: '12.0'

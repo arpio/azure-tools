@@ -1,32 +1,32 @@
 // get parameters
 @description('Location for all resources.')
-param location string = 'eastus2'
+param location string
 
 @description('resource group name (unique to the subscription)')
-param resourceGroupName string = 'demo-sqlvm-rg'
+param resourceGroupName string
 
 @description('Admin username for the VM')
-param adminUsername string = 'arpiouser'
+param adminUsername string
 
 @secure()
 @description('Admin password for the VM')
 param adminPassword string
+
+@description('Admin username for SQL Server')
+param sqlAdminUsername string
 
 @secure()
 @description('SQL Server admin password')
 param sqlAdminPassword string
 
 @description('Name of the VM')
-param vmName string = 'demo-sqlvm'
+param vmName string
 
 @description('VM size')
-param vmSize string = 'Standard_B2s'
+param vmSize string
 
 @description('SQL Server name (must be globally unique)')
-param sqlServerNamePrefix string
-
-@description('SQL Database name')
-param sqlDatabaseName string = 'guestbook'
+param sqlServerName string
 
 targetScope = 'subscription'
 
@@ -43,11 +43,12 @@ module rgContents 'sqlvm-rg.bicep' = {
   params: {
     adminUsername: adminUsername
     adminPassword: adminPassword
+    sqlAdminUsername: sqlAdminUsername
     sqlAdminPassword: sqlAdminPassword
     vmName: vmName
     vmSize: vmSize
-    sqlServerName: '${sqlServerNamePrefix}-${uniqueString(rg.id)}'
-    sqlDatabaseName: sqlDatabaseName
+    sqlServerName: sqlServerName
+    sqlDatabaseName: 'GuestbookDb'
   }
 }
 
