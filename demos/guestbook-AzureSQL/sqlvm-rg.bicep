@@ -1,6 +1,4 @@
-@description('Location for all resources')
-param location string = resourceGroup().location
-
+// Parameters
 @description('Admin username for the VM')
 param adminUsername string = 'arpiouser'
 
@@ -19,14 +17,13 @@ param vmName string = 'demo-sqlvm'
 param vmSize string = 'Standard_B2s'
 
 @description('SQL Server name (must be globally unique)')
-param sqlServerName string = 'sqlserver${uniqueString(resourceGroup().id)}'
+param sqlServerName string
 
 @description('SQL Database name')
 param sqlDatabaseName string = 'guestbook'
 
 // Variables
-var resourceGroupName = resourceGroup().name
-var location_var = location
+var location = resourceGroup().location
 var vnetName = 'demo-vnet'
 var subnetName = 'default'
 var nsgName = 'demo-sqlvm-nsg'
@@ -168,6 +165,9 @@ resource nic 'Microsoft.Network/networkInterfaces@2023-05-01' = {
 resource sqlServer 'Microsoft.Sql/servers@2021-11-01' = {
   name: sqlServerName
   location: location
+  tags : {
+    'arpio-config:admin-password-secret': sqlAdminSecret.name
+  }
   properties: {
     administratorLogin: 'sqladmin'
     administratorLoginPassword: sqlAdminPassword
@@ -189,10 +189,17 @@ resource sqlDatabase 'Microsoft.Sql/servers/databases@2021-11-01' = {
   parent: sqlServer
   name: sqlDatabaseName
   location: location
-  properties: {
+   sku: {
+    name: 'Basic'
+    tier: 'Basic'
+    capacity: 5  // 5 DTUs
+  }
+  properties:{   
     collation: 'SQL_Latin1_General_CP1_CI_AS'
-    edition: 'Basic'
-    requestedServiceObjectiveName: 'Basic'
+    maxSizeBytes: 2147483648  // 2 GB
+    catalogCollation: 'SQL_Latin1_General_CP1_CI_AS'
+    zoneRedundant: false
+    readScale: 'Disabled'
   }
 }
 
@@ -264,25 +271,11 @@ resource vmExtension 'Microsoft.Compute/virtualMachines/extensions@2023-03-01' =
 }
 
 //
-// Role Assignment - Key Vault Secrets User for VM
-//
-resource roleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(keyVault.id, vm.identity.principalId, 'Key Vault Secrets User')
-  scope: keyVault
-  properties: {
-    principalId: vm.identity.principalId
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6')
-    principalType: 'ServicePrincipal'
-  }
-}
-
-//
 // Outputs
 //
 output publicIPAddress string = publicIP.properties.ipAddress
 output vmName string = vm.name
+output vmIdentityId string = vm.identity.principalId
 output sqlServerFqdn string = sqlServer.properties.fullyQualifiedDomainName
-output keyVaultId string = keyVault.id
-output keyVaultName string = keyVault.name
-output rdpCommand string = 'mstsc /v:${publicIP.properties.ipAddress}'
+output keyVault object = keyVault
 output sqlConnectionString string = 'Server=${sqlServer.properties.fullyQualifiedDomainName},1433;Database=${sqlDatabaseName};User ID=sqladmin;Password=<your_password>;'
