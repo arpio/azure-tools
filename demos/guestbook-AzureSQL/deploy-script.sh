@@ -1,6 +1,8 @@
-echo ""
+#!/usr/bin/env bash
+
+echo " "
 echo "// Stark Industries Mainframe //   J.A.R.V.I.S. online … Hello Mr. Stark!"
-echo ""
+echo " "
 
 # ================================================================
 # Arpio Demo Deployment Script (Super Duper Edition)
@@ -17,15 +19,21 @@ echo ""
 # -------------- PROMPTS --------------
 read -p "Enter Resource Group name [rg-arpio-demo]: " RG_INPUT
 RESOURCE_GROUP=${RG_INPUT:-rg-arpio-demo}
+echo " "
 
-read -s -p "Enter WINDOWS VM admin password (The password length must be between 12 and 123. Password must have the 3 of the following: 1 lower case character, 1 upper case character, 1 number and 1 special character): " ADMIN_PASSWORD
-echo ""
-read -s -p "Enter SQL admin password: " SQL_PASSWORD
-echo ""
+echo "Enter WINDOWS VM admin password"
+echo "(The password length must be between 12 and 123. Password must have the 3 of the following: 1 lower case character, 1 upper case character, 1 number and 1 special character)"
+read -sp "Enter value: " ADMIN_PASSWORD
+echo " "
 
-LOCATION="eastus2"
+read -sp "Enter SQL admin password: " SQL_PASSWORD
+echo " "
+
+LOCATION="westus2"
 
 RAND=$RANDOM
+
+BICEP_FILE="sqlvm-subscription.bicep"
 
 VM_NAME="starkvm-$RAND"
 ADMIN_USER="azureuser"
@@ -44,15 +52,30 @@ KV_NAME="stark-kv-$RAND"
 fail() { echo "ERROR: $1" >&2; }
 step() { echo "$1"; }
 
-#
-# create resource group for deployment
-step "Creating resource group..."
-az group create -n "$RESOURCE_GROUP" -l "$LOCATION" >/dev/null || fail "resource group create failed"
-
+echo "password: $ADMIN_PASSWORD"
 #
 # create resources
-# TODO: call bash script
-
+# TODO: call bicep
+az deployment sub create \
+  --location $LOCATION \
+  --template-file $BICEP_FILE \
+  --name $RESOURCE_GROUP
+  --parameters \
+    resourceGroupName=$RESOURCE_GROUP \
+    location=$LOCATION \
+    vmName=$VM_NAME \
+    adminUsername=$ADMIN_USER \
+    adminPassword="$ADMIN_PASSWORD" \
+    sqlAdminUsername=$SQL_ADMIN \
+    sqlAdminPassword="$SQL_PASSWORD" \
+    sqlServerName=$SQL_SERVER \
+    sqlDatabaseName=$SQL_DB \
+    vnetName=$VNET_NAME \
+    subnetName=$SUBNET_NAME \
+    ipName=$IP_NAME \
+    nicName=$NIC_NAME \
+    nsgName=$NSG_NAME \
+    keyVaultName=$KV_NAME
 
 #
 # --------- Create Guestbook table from Cloud Shell ---------
