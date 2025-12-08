@@ -37,6 +37,7 @@ var tmpKeyVaultName = toLower('${vmName}-kv-${uniqueString(resourceGroup().id)}'
 var keyVaultName = length(tmpKeyVaultName) > 24 
   ? substring(tmpKeyVaultName, 0, 24) 
   : tmpKeyVaultName
+var sqlAdminSecretUrl = 'https://${keyVaultName}${environment().suffixes.keyvaultDns}/secrets/sql-admin-password'
 
 // User-Assigned Managed Identity
 resource userIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
@@ -179,7 +180,7 @@ resource sqlServer 'Microsoft.Sql/servers@2021-11-01' = {
   name: sqlServerName
   location: location
   tags : {
-    'arpio-config:admin-password-secret': sqlAdminSecret.name
+    'arpio-config:admin-password-secret': sqlAdminSecretUrl
   }
   properties: {
     administratorLogin: sqlAdminUsername
@@ -293,5 +294,6 @@ output publicIPAddress string = publicIP.properties.ipAddress
 output vmName string = vm.name
 output vmIdentityId string = userIdentity.properties.principalId
 output sqlServerFqdn string = sqlServer.properties.fullyQualifiedDomainName
-output keyVault object = keyVault
+output keyVaultId string = keyVault.id
+output keyVaultName string = keyVault.name
 output sqlConnectionString string = 'Server=${sqlServer.properties.fullyQualifiedDomainName},1433;Database=${sqlDatabaseName};User ID=sqladmin;Password=<your_password>;'

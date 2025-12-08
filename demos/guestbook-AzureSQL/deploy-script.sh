@@ -16,6 +16,27 @@ echo " "
 #   - creation location is eastus2 / I kept having throttling issues in eastus1
 # ================================================================
 
+# Password validation function
+validate_password() {
+  local pwd="$1"
+  local len=${#pwd}
+  
+  # Check length (12-123)
+  if [ $len -lt 12 ] || [ $len -gt 123 ]; then
+    return 1
+  fi
+  
+  # Count character types
+  local count=0
+  [[ "$pwd" =~ [a-z] ]] && ((count++))
+  [[ "$pwd" =~ [A-Z] ]] && ((count++))
+  [[ "$pwd" =~ [0-9] ]] && ((count++))
+  [[ "$pwd" =~ [^a-zA-Z0-9] ]] && ((count++))
+  
+  # Need at least 3 types
+  [ $count -ge 3 ]
+}
+
 # -------------- PROMPTS --------------
 read -p "Enter Resource Group name [rg-arpio-demo]: " RG_INPUT
 RESOURCE_GROUP=${RG_INPUT:-rg-arpio-demo}
@@ -23,11 +44,27 @@ echo " "
 
 echo "Enter WINDOWS VM admin password"
 echo "(The password length must be between 12 and 123. Password must have the 3 of the following: 1 lower case character, 1 upper case character, 1 number and 1 special character)"
-read -s -p "Enter value: " ADMIN_PASSWORD
-echo ""
+while true; do
+  read -p "Enter value: " ADMIN_PASSWORD
+  echo ""
+  if validate_password "$ADMIN_PASSWORD"; then
+    break
+  else
+    echo "Password must contain characters from three of the following four categories: uppercase, lowercase, numbers, and special characters. Please try again."
+  fi
+done
 
-read -s -p "Enter SQL admin password: " SQL_PASSWORD
-echo ""
+echo "Enter SQL admin password"
+echo "(The password length must be between 12 and 123. Password must have the 3 of the following: 1 lower case character, 1 upper case character, 1 number and 1 special character)"
+while true; do
+  read -p "Enter value: " SQL_PASSWORD
+  echo ""
+  if validate_password "$SQL_PASSWORD"; then
+    break
+  else
+    echo "Password must contain characters from three of the following four categories: uppercase, lowercase, numbers, and special characters. Please try again."
+  fi
+done
 
 #
 # -- ensure that the specified VM Size/Sku is available in the specific region
@@ -39,6 +76,7 @@ RAND=$RANDOM
 BICEP_FILE="sqlvm-subscription.bicep"
 
 VM_NAME="starkvm-${RESOURCE_GROUP}"
+VM_NAME="${VM_NAME:0:15}"
 ADMIN_USER="azureuser"
 
 SQL_ADMIN="sqladmin-$RAND"
