@@ -38,6 +38,12 @@ var keyVaultName = length(tmpKeyVaultName) > 24
   ? substring(tmpKeyVaultName, 0, 24) 
   : tmpKeyVaultName
 
+// User-Assigned Managed Identity
+resource userIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
+  name: '${vmName}-identity'
+  location: location
+}
+
 // Key Vault
 resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
   name: keyVaultName
@@ -217,7 +223,10 @@ resource vm 'Microsoft.Compute/virtualMachines@2023-03-01' = {
   name: vmName
   location: location
   identity: {
-    type: 'SystemAssigned'
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${userIdentity.id}': {}
+    }
   }
   properties: {
     hardwareProfile: {
@@ -282,7 +291,7 @@ resource vmExtension 'Microsoft.Compute/virtualMachines/extensions@2023-03-01' =
 //
 output publicIPAddress string = publicIP.properties.ipAddress
 output vmName string = vm.name
-output vmIdentityId string = vm.identity.principalId
+output vmIdentityId string = userIdentity.properties.principalId
 output sqlServerFqdn string = sqlServer.properties.fullyQualifiedDomainName
 output keyVault object = keyVault
 output sqlConnectionString string = 'Server=${sqlServer.properties.fullyQualifiedDomainName},1433;Database=${sqlDatabaseName};User ID=sqladmin;Password=<your_password>;'
