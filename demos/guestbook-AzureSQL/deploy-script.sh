@@ -71,7 +71,7 @@ done
 LOCATION="westus2"
 VM_SIZE="Standard_B2as_v2"
 
-RAND=$RANDOM
+RAND=$(echo -n "$RESOURCE_GROUP" | md5sum | cut -c1-5)
 
 BICEP_FILE="sqlvm-subscription.bicep"
 
