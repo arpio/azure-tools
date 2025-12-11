@@ -31,6 +31,19 @@ var ubuntuSku = isArmVm ? '22_04-lts-arm64' : '22_04-lts'
 // Build the URL once (this creates an implicit dependency on sqlKv)
 var kvSecretUrl = 'https://${sqlKv.name}${environment().suffixes.keyvaultDns}/secrets/${sqlServerName}'
 
+// Load external scripts and substitute placeholders
+var appPyContent = loadTextContent('scripts/app.py')
+var setupScriptTemplate = loadTextContent('scripts/vm-setup.sh')
+var setupScript = replace(
+  replace(
+    replace(
+      replace(
+        replace(setupScriptTemplate, '{{SQL_SERVER}}', '${sqlServerName}${environment().suffixes.sqlServerHostname}'),
+        '{{SQL_DATABASE}}', sqlDbName),
+      '{{SQL_USER}}', sqlAdminLogin),
+    '{{SQL_PASSWORD}}', sqlAdminPassword),
+  '{{APP_PY}}', appPyContent)
+
 
 // NSG
 resource nsg 'Microsoft.Network/networkSecurityGroups@2023-11-01' = {
@@ -182,19 +195,7 @@ resource vmss 'Microsoft.Compute/virtualMachineScaleSets@2023-09-01' = {
             ]
           }
         }
-        // Escape $ in $(hostname) as \$ to avoid BCP006
-        customData: base64('''#!/bin/bash
-        set -euxo pipefail
-        export DEBIAN_FRONTEND=noninteractive
-
-        apt-get update
-        apt-get install -y nginx
-
-        systemctl enable nginx
-        systemctl start nginx
-
-        echo "Hello from $(hostname)" > /var/www/html/index.html
-        ''')        
+        customData: base64(setupScript)
       }
       networkProfile: {
         networkInterfaceConfigurations: [
@@ -358,16 +359,7 @@ resource vmStandalone 'Microsoft.Compute/virtualMachines@2023-09-01' = {
           ]
         }
       }
-      // Same user-data style you used for VMSS
-      customData: base64('''#!/bin/bash
-set -euxo pipefail
-export DEBIAN_FRONTEND=noninteractive
-apt-get update
-apt-get install -y nginx
-systemctl enable nginx
-systemctl start nginx
-echo "Hello from $(hostname)" > /var/www/html/index.html
-''')
+      customData: base64(setupScript)
     }
     networkProfile: {
       networkInterfaces: [
