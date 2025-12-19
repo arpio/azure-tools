@@ -34,15 +34,15 @@ var kvSecretUrl = 'https://${sqlKv.name}${environment().suffixes.keyvaultDns}/se
 // Load external scripts and substitute placeholders
 var appPyContent = loadTextContent('scripts/app.py')
 var setupScriptTemplate = loadTextContent('scripts/vm-setup.sh')
-var setupScript = replace(
-  replace(
-    replace(
-      replace(
-        replace(setupScriptTemplate, '{{SQL_SERVER}}', '${sqlServerName}${environment().suffixes.sqlServerHostname}'),
-        '{{SQL_DATABASE}}', sqlDbName),
-      '{{SQL_USER}}', sqlAdminLogin),
-    '{{SQL_PASSWORD}}', sqlAdminPassword),
-  '{{APP_PY}}', appPyContent)
+var setupScript = replace(setupScriptTemplate, '{{APP_PY}}', appPyContent)
+
+// DB connection info as JSON for userData (Arpio can update this for DR failover)
+var userDataJson = {
+  sqlServer: '${sqlServerName}${environment().suffixes.sqlServerHostname}'
+  sqlDatabase: sqlDbName
+  sqlUser: sqlAdminLogin
+  sqlPassword: sqlAdminPassword
+}
 
 
 // NSG
@@ -197,6 +197,7 @@ resource vmss 'Microsoft.Compute/virtualMachineScaleSets@2023-09-01' = {
         }
         customData: base64(setupScript)
       }
+      userData: base64(string(userDataJson))
       networkProfile: {
         networkInterfaceConfigurations: [
           {
@@ -369,6 +370,7 @@ resource vmStandalone 'Microsoft.Compute/virtualMachines@2023-09-01' = {
         }
       ]
     }
+    userData: base64(string(userDataJson))
   }
 }
 

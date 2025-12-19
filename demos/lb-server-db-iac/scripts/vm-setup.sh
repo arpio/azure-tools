@@ -2,15 +2,9 @@
 set -euxo pipefail
 export DEBIAN_FRONTEND=noninteractive
 
-# SQL connection info (placeholders replaced by Bicep)
-SQL_SERVER="{{SQL_SERVER}}"
-SQL_DATABASE="{{SQL_DATABASE}}"
-SQL_USER="{{SQL_USER}}"
-SQL_PASSWORD="{{SQL_PASSWORD}}"
-
-# Update and install base dependencies
+# Update and install base dependencies (jq for parsing userData JSON from IMDS)
 apt-get update
-apt-get install -y python3 python3-pip python3-venv curl gnupg
+apt-get install -y python3 python3-pip python3-venv curl gnupg jq
 
 # Install Microsoft ODBC driver for SQL Server
 curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg
@@ -31,17 +25,32 @@ cat > /opt/demo-app/app.py << 'PYEOF'
 {{APP_PY}}
 PYEOF
 
-# Create environment file with SQL connection info
-cat > /opt/demo-app/.env << ENVEOF
-SQL_SERVER=${SQL_SERVER}
-SQL_DATABASE=${SQL_DATABASE}
-SQL_USER=${SQL_USER}
-SQL_PASSWORD=${SQL_PASSWORD}
-ENVEOF
+# Create startup wrapper script that fetches DB config from userData (IMDS)
+cat > /opt/demo-app/start.sh << 'STARTEOF'
+#!/bin/bash
+set -e
 
-chmod 600 /opt/demo-app/.env
+# Fetch userData from Azure IMDS (returns base64-encoded JSON)
+USER_DATA=$(curl -s -H "Metadata: true" \
+  "http://169.254.169.254/metadata/instance/compute/userData?api-version=2021-01-01&format=text" \
+  | base64 -d)
 
-# Create systemd service
+# Parse JSON and export as environment variables
+export SQL_SERVER=$(echo "$USER_DATA" | jq -r '.sqlServer')
+export SQL_DATABASE=$(echo "$USER_DATA" | jq -r '.sqlDatabase')
+export SQL_USER=$(echo "$USER_DATA" | jq -r '.sqlUser')
+export SQL_PASSWORD=$(echo "$USER_DATA" | jq -r '.sqlPassword')
+
+# Start gunicorn with the Flask app
+exec /opt/demo-app/venv/bin/gunicorn --bind 0.0.0.0:80 --workers 2 \
+  --access-logfile /var/log/demo-app-access.log \
+  --error-logfile /var/log/demo-app-error.log \
+  app:app
+STARTEOF
+
+chmod 755 /opt/demo-app/start.sh
+
+# Create systemd service (uses start.sh which fetches DB config from userData)
 cat > /etc/systemd/system/demo-app.service << 'SVCEOF'
 [Unit]
 Description=Demo Flask App
@@ -51,8 +60,7 @@ After=network.target
 Type=simple
 User=root
 WorkingDirectory=/opt/demo-app
-EnvironmentFile=/opt/demo-app/.env
-ExecStart=/opt/demo-app/venv/bin/gunicorn --bind 0.0.0.0:80 --workers 2 --access-logfile /var/log/demo-app-access.log --error-logfile /var/log/demo-app-error.log app:app
+ExecStart=/opt/demo-app/start.sh
 Restart=always
 RestartSec=5
 
