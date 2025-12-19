@@ -16,8 +16,11 @@ param sqlAdminPassword string = 'Aa1!${uniqueString(resourceGroup().id) }'
 // Variables
 var vnetName   = 'vnet-app'
 var subnetName = 'subnet-app'
+var bastionSubnetName = 'AzureBastionSubnet'
 var nsgName    = 'nsg-app'
 var pipName    = 'pip-lb'
+var bastionPipName = 'pip-bastion'
+var bastionName = 'bastion-app'
 var pipDomainNameLabel = 'pip-lb-${uniqueString(resourceGroup().id)}'
 var lbName     = 'lb-app'
 var bepoolName = 'lb-be'
@@ -95,11 +98,17 @@ resource vnet 'Microsoft.Network/virtualNetworks@2023-11-01' = {
           networkSecurityGroup: { id: nsg.id }
         }
       }
+      {
+        name: bastionSubnetName
+        properties: {
+          addressPrefix: '10.0.1.0/26'
+        }
+      }
     ]
   }
 }
 
-// Public IP
+// Public IP for Load Balancer
 resource pip 'Microsoft.Network/publicIPAddresses@2023-11-01' = {
   name: pipName
   location: location
@@ -107,9 +116,44 @@ resource pip 'Microsoft.Network/publicIPAddresses@2023-11-01' = {
   properties: {
     publicIPAllocationMethod: 'Static'
     dnsSettings: {
-      domainNameLabel: pipDomainNameLabel 
+      domainNameLabel: pipDomainNameLabel
     }
   }
+}
+
+// Public IP for Bastion
+resource bastionPip 'Microsoft.Network/publicIPAddresses@2023-11-01' = {
+  name: bastionPipName
+  location: location
+  sku: { name: 'Standard' }
+  properties: {
+    publicIPAllocationMethod: 'Static'
+  }
+}
+
+// Azure Bastion Host
+resource bastion 'Microsoft.Network/bastionHosts@2023-11-01' = {
+  name: bastionName
+  location: location
+  sku: { name: 'Basic' }
+  properties: {
+    ipConfigurations: [
+      {
+        name: 'bastion-ipconfig'
+        properties: {
+          subnet: {
+            id: resourceId('Microsoft.Network/virtualNetworks/subnets', vnetName, bastionSubnetName)
+          }
+          publicIPAddress: {
+            id: bastionPip.id
+          }
+        }
+      }
+    ]
+  }
+  dependsOn: [
+    vnet
+  ]
 }
 
 // Load Balancer (no self-references)
