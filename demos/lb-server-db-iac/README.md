@@ -7,8 +7,10 @@ This folder contains Infrastructure as Code (IaC) configuration to deploy a **Lo
 The deployed workload looks like this:
 ![architecture](images/lb-server-db.png)
 
-* The servers are reachable through the Load Balancer and will return the server name
-* However, the VMs (servers) do not actually communicate with the DB. Adding this is a TODO item.
+* A single standalone VM and two VMSS-based VMs are deployed
+* All servers are reachable through the Load Balancer
+* The servers are running a simpl Flask app that reads and writes to the DB
+![alt text](images/demo_app.png)
 
 ## Deployment
 
@@ -22,7 +24,6 @@ If this is a new deployment and you are using a new resource group, then create 
 az group create -n <resource_group_name> -l <region>
 ```
 
-Bicep
 ```bash
 az deployment group create \
   --name lb-server-db-bicep \
@@ -31,11 +32,3 @@ az deployment group create \
   --parameters azuredeploy.bicepparam
 ```
 
-ARM
-```bash
-az deployment group create \
-  --name lb-server-db-arm \
-  --resource-group <resource_group_name> \
-  --template-file azuredeploy.json \
-  --parameters @azuredeploy.parameters.json
-```
