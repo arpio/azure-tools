@@ -34,10 +34,14 @@ var ubuntuSku = isArmVm ? '22_04-lts-arm64' : '22_04-lts'
 // Build the URL once (this creates an implicit dependency on sqlKv)
 var kvSecretUrl = 'https://${sqlKv.name}${environment().suffixes.keyvaultDns}/secrets/${sqlServerName}'
 
-// Load external scripts and substitute placeholders
+// Storage account for VM setup scripts
+var scriptsStorageName = toLower('scripts${uniqueSuffix}')
+var scriptsContainerName = 'vmscripts'
+var scriptsBaseUrl = 'https://${scriptsStorageName}.blob.${environment().suffixes.storage}/${scriptsContainerName}'
+
+// Load scripts for upload to blob storage
+var setupScriptContent = loadTextContent('scripts/vm-setup.sh')
 var appPyContent = loadTextContent('scripts/app.py')
-var setupScriptTemplate = loadTextContent('scripts/vm-setup.sh')
-var setupScript = replace(setupScriptTemplate, '{{APP_PY}}', appPyContent)
 
 // DB connection info as JSON for userData (Arpio can update this for DR failover)
 var userDataJson = {
@@ -156,6 +160,94 @@ resource bastion 'Microsoft.Network/bastionHosts@2023-11-01' = {
   ]
 }
 
+// ---------- STORAGE FOR VM SETUP SCRIPTS ----------
+
+// Storage account for VM scripts (public blob access)
+resource scriptsStorage 'Microsoft.Storage/storageAccounts@2023-01-01' = {
+  name: scriptsStorageName
+  location: location
+  sku: { name: 'Standard_LRS' }
+  kind: 'StorageV2'
+  properties: {
+    allowBlobPublicAccess: true
+    minimumTlsVersion: 'TLS1_2'
+  }
+}
+
+// Blob service
+resource scriptsBlobService 'Microsoft.Storage/storageAccounts/blobServices@2023-01-01' = {
+  parent: scriptsStorage
+  name: 'default'
+}
+
+// Container for scripts (public read access for blobs)
+resource scriptsContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-01-01' = {
+  parent: scriptsBlobService
+  name: scriptsContainerName
+  properties: {
+    publicAccess: 'Blob'
+  }
+}
+
+// Managed identity for deployment script to upload blobs
+resource scriptUploadIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
+  name: 'id-script-upload'
+  location: location
+}
+
+// Role assignment: Storage Blob Data Contributor for the managed identity
+resource scriptUploadRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(scriptsStorage.id, scriptUploadIdentity.id, 'Storage Blob Data Contributor')
+  scope: scriptsStorage
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
+    principalId: scriptUploadIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// Deployment script to upload setup scripts to blob storage
+resource uploadScripts 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
+  name: 'upload-vm-scripts'
+  location: location
+  kind: 'AzureCLI'
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${scriptUploadIdentity.id}': {}
+    }
+  }
+  properties: {
+    azCliVersion: '2.50.0'
+    retentionInterval: 'PT1H'
+    timeout: 'PT10M'
+    environmentVariables: [
+      { name: 'STORAGE_ACCOUNT', value: scriptsStorageName }
+      { name: 'CONTAINER_NAME', value: scriptsContainerName }
+      { name: 'SETUP_SCRIPT', value: setupScriptContent }
+      { name: 'APP_PY', value: appPyContent }
+    ]
+    scriptContent: '''
+      set -e
+      TEMP_DIR="/tmp"
+
+      echo "$SETUP_SCRIPT" > "$TEMP_DIR/vm-setup.sh"
+      echo "$APP_PY" > "$TEMP_DIR/app.py"
+
+      az storage blob upload --account-name "$STORAGE_ACCOUNT" --container-name "$CONTAINER_NAME" \
+        --name vm-setup.sh --file "$TEMP_DIR/vm-setup.sh" --overwrite --auth-mode login
+      az storage blob upload --account-name "$STORAGE_ACCOUNT" --container-name "$CONTAINER_NAME" \
+        --name app.py --file "$TEMP_DIR/app.py" --overwrite --auth-mode login
+
+      echo "Scripts uploaded successfully to $STORAGE_ACCOUNT/$CONTAINER_NAME"
+    '''
+  }
+  dependsOn: [
+    scriptsContainer
+    scriptUploadRoleAssignment
+  ]
+}
+
 // Load Balancer (no self-references)
 resource lb 'Microsoft.Network/loadBalancers@2023-11-01' = {
   name: lbName
@@ -211,7 +303,7 @@ resource vmss 'Microsoft.Compute/virtualMachineScaleSets@2023-09-01' = {
   location: location
   sku: { name: vmSku, tier: 'Standard', capacity: instanceCount }
   properties: {
-    upgradePolicy: { mode: 'Rolling' }
+    upgradePolicy: { mode: 'Automatic' }
     virtualMachineProfile: {
       storageProfile: {
         imageReference: {
@@ -239,7 +331,6 @@ resource vmss 'Microsoft.Compute/virtualMachineScaleSets@2023-09-01' = {
             ]
           }
         }
-        customData: base64(setupScript)
       }
       userData: base64(string(userDataJson))
       networkProfile: {
@@ -275,10 +366,28 @@ resource vmss 'Microsoft.Compute/virtualMachineScaleSets@2023-09-01' = {
   }
   dependsOn: [
     lb
+    uploadScripts
   ]
-  // vnet dependency is inferred; lb isn’t strictly required as dependsOn when using resourceId(),
-  // but you can add it if you want to force order.
-  // dependsOn: [ lb ]
+}
+
+// Custom Script Extension for VMSS - downloads and runs setup script from blob storage
+resource vmssCustomScript 'Microsoft.Compute/virtualMachineScaleSets/extensions@2023-09-01' = {
+  parent: vmss
+  name: 'customScript'
+  properties: {
+    publisher: 'Microsoft.Azure.Extensions'
+    type: 'CustomScript'
+    typeHandlerVersion: '2.1'
+    autoUpgradeMinorVersion: true
+    settings: {
+      fileUris: [
+        '${scriptsBaseUrl}/vm-setup.sh'
+      ]
+    }
+    protectedSettings: {
+      commandToExecute: 'bash vm-setup.sh "${scriptsBaseUrl}"'
+    }
+  }
 }
 
 // ---------- AUTOSCALE FOR VMSS (add after your VMSS) ----------
@@ -404,7 +513,6 @@ resource vmStandalone 'Microsoft.Compute/virtualMachines@2023-09-01' = {
           ]
         }
       }
-      customData: base64(setupScript)
     }
     networkProfile: {
       networkInterfaces: [
@@ -415,6 +523,30 @@ resource vmStandalone 'Microsoft.Compute/virtualMachines@2023-09-01' = {
       ]
     }
     userData: base64(string(userDataJson))
+  }
+  dependsOn: [
+    uploadScripts
+  ]
+}
+
+// Custom Script Extension for standalone VM
+resource vmCustomScript 'Microsoft.Compute/virtualMachines/extensions@2023-09-01' = {
+  parent: vmStandalone
+  name: 'customScript'
+  location: location
+  properties: {
+    publisher: 'Microsoft.Azure.Extensions'
+    type: 'CustomScript'
+    typeHandlerVersion: '2.1'
+    autoUpgradeMinorVersion: true
+    settings: {
+      fileUris: [
+        '${scriptsBaseUrl}/vm-setup.sh'
+      ]
+    }
+    protectedSettings: {
+      commandToExecute: 'bash vm-setup.sh "${scriptsBaseUrl}"'
+    }
   }
 }
 

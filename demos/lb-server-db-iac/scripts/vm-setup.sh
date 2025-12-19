@@ -2,6 +2,9 @@
 set -euxo pipefail
 export DEBIAN_FRONTEND=noninteractive
 
+# First argument: base URL for scripts in Azure Storage
+SCRIPTS_BASE_URL="${1:?Usage: vm-setup.sh <scripts-base-url>}"
+
 # Update and install base dependencies (jq for parsing userData JSON from IMDS)
 apt-get update
 apt-get install -y python3 python3-pip python3-venv curl gnupg jq
@@ -20,10 +23,8 @@ python3 -m venv /opt/demo-app/venv
 /opt/demo-app/venv/bin/pip install --upgrade pip
 /opt/demo-app/venv/bin/pip install flask pyodbc gunicorn
 
-# Create the Flask application
-cat > /opt/demo-app/app.py << 'PYEOF'
-{{APP_PY}}
-PYEOF
+# Download the Flask application from Azure Storage
+curl -fsSL "${SCRIPTS_BASE_URL}/app.py" -o /opt/demo-app/app.py
 
 # Create startup wrapper script that fetches DB config from userData (IMDS)
 cat > /opt/demo-app/start.sh << 'STARTEOF'
