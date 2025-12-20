@@ -383,8 +383,7 @@ resource vmssCustomScript 'Microsoft.Compute/virtualMachineScaleSets/extensions@
       fileUris: [
         '${scriptsBaseUrl}/vm-setup.sh'
       ]
-    }
-    protectedSettings: {
+      // passes the blob URL as argument so the script can download app.py
       commandToExecute: 'bash vm-setup.sh "${scriptsBaseUrl}"'
     }
   }
@@ -543,8 +542,7 @@ resource vmCustomScript 'Microsoft.Compute/virtualMachines/extensions@2023-09-01
       fileUris: [
         '${scriptsBaseUrl}/vm-setup.sh'
       ]
-    }
-    protectedSettings: {
+      // passes the blob URL as argument so the script can download app.py
       commandToExecute: 'bash vm-setup.sh "${scriptsBaseUrl}"'
     }
   }
