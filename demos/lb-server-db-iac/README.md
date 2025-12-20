@@ -9,7 +9,10 @@ The deployed workload looks like this:
 
 * A single standalone VM and two VMSS-based VMs are deployed
 * All servers are reachable through the Load Balancer
-* The servers are running a simpl Flask app that reads and writes to the DB
+* The servers are running a simple Flask app that reads and writes to the DB
+* Bastions are deployed to access the VMs
+* An Azure Storage Account is created
+* Code and scripts are uploaded to the Storage Account as Blob Storage for use by the VMs
 ![alt text](images/demo_app.png)
 
 ## Deployment
