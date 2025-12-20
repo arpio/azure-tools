@@ -314,6 +314,7 @@ resource vmss 'Microsoft.Compute/virtualMachineScaleSets@2023-09-01' = {
         }
         osDisk: {
           createOption: 'FromImage'
+          deleteOption: 'Delete' // The default value is Detach
           managedDisk: { storageAccountType: 'Standard_LRS' }
         }
       }
@@ -495,6 +496,7 @@ resource vmStandalone 'Microsoft.Compute/virtualMachines@2023-09-01' = {
       }
       osDisk: {
         createOption: 'FromImage'
+        deleteOption: 'Delete' //The default value is Detach
         managedDisk: { storageAccountType: 'Standard_LRS' }
       }
     }
