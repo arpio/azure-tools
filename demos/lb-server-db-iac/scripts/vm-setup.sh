@@ -21,7 +21,7 @@ mkdir -p /opt/demo-app
 # Create Python virtual environment and install dependencies
 python3 -m venv /opt/demo-app/venv
 /opt/demo-app/venv/bin/pip install --upgrade pip
-/opt/demo-app/venv/bin/pip install flask pyodbc gunicorn
+/opt/demo-app/venv/bin/pip install flask pyodbc gunicorn requests
 
 # Download the Flask application from Azure Storage
 curl -fsSL "${SCRIPTS_BASE_URL}/app.py" -o /opt/demo-app/app.py

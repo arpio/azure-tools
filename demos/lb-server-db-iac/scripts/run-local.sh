@@ -11,7 +11,7 @@ fi
 
 # Activate and install dependencies (flask only - pyodbc needs unixodbc)
 source .venv/bin/activate
-pip install -q flask
+pip install -q flask requests
 
 # Set dummy SQL environment variables
 export SQL_SERVER="localhost"
