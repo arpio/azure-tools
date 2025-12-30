@@ -21,6 +21,8 @@ var nsgName    = 'nsg-app'
 var pipName    = 'pip-lb'
 var bastionPipName = 'pip-bastion'
 var bastionName = 'bastion-app'
+var natGatewayName = 'nat-app'
+var natGatewayPipName = 'pip-nat'
 var pipDomainNameLabel = 'pip-lb-${uniqueString(resourceGroup().id)}'
 var lbName     = 'lb-app'
 var bepoolName = 'lb-be'
@@ -100,6 +102,7 @@ resource vnet 'Microsoft.Network/virtualNetworks@2023-11-01' = {
         properties: {
           addressPrefix: '10.0.0.0/24'
           networkSecurityGroup: { id: nsg.id }
+          natGateway: { id: natGateway.id }
         }
       }
       {
@@ -160,6 +163,31 @@ resource bastion 'Microsoft.Network/bastionHosts@2023-11-01' = {
   ]
 }
 
+// ---------- NAT GATEWAY ----------
+
+// Public IP for NAT Gateway
+resource natGatewayPip 'Microsoft.Network/publicIPAddresses@2023-11-01' = {
+  name: natGatewayPipName
+  location: location
+  sku: { name: 'Standard' }
+  properties: {
+    publicIPAllocationMethod: 'Static'
+  }
+}
+
+// NAT Gateway for outbound internet access
+resource natGateway 'Microsoft.Network/natGateways@2023-11-01' = {
+  name: natGatewayName
+  location: location
+  sku: { name: 'Standard' }
+  properties: {
+    idleTimeoutInMinutes: 4
+    publicIpAddresses: [
+      { id: natGatewayPip.id }
+    ]
+  }
+}
+
 // ---------- STORAGE FOR VM SETUP SCRIPTS ----------
 
 // Storage account for VM scripts (public blob access)
@@ -200,6 +228,8 @@ resource scriptUploadRoleAssignment 'Microsoft.Authorization/roleAssignments@202
   name: guid(scriptsStorage.id, scriptUploadIdentity.id, 'Storage Blob Data Contributor')
   scope: scriptsStorage
   properties: {
+    // Built-in role Storage Blob Data Contributor: ba92f5b4-2d11-453d-a403-e96b0029c9fe 
+    // https://learn.microsoft.com/en-us/azure/role-based-access-control/built-in-roles
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
     principalId: scriptUploadIdentity.properties.principalId
     principalType: 'ServicePrincipal'
@@ -314,7 +344,7 @@ resource vmss 'Microsoft.Compute/virtualMachineScaleSets@2023-09-01' = {
         }
         osDisk: {
           createOption: 'FromImage'
-          deleteOption: 'Delete' // The default value is Detach
+          // Note: deleteOption cannot be set for VMSS via ARM/Bicep
           managedDisk: { storageAccountType: 'Standard_LRS' }
         }
       }
@@ -641,5 +671,6 @@ resource sqldb 'Microsoft.Sql/servers/databases@2023-08-01' = {
 // Output: prefer resource symbol property (no reference())
 output loadBalancerPublicIP string = pip.properties.ipAddress
 output loadBalancerFQDN string = pip.properties.dnsSettings.fqdn
+output natGatewayPublicIP string = natGatewayPip.properties.ipAddress
 output sqlServerFqdn string = sql.properties.fullyQualifiedDomainName
 output sqlAdminPwdSecretUrl string = kvSecretUrl

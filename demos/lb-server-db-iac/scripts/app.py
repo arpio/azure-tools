@@ -1,10 +1,12 @@
 """
 Flask demo app - CRUD operations with Azure SQL Database.
 Displays hostname and allows adding/deleting messages.
+Fetches external time via NAT Gateway to demonstrate outbound connectivity.
 """
 import os
 import socket
 import pyodbc
+import requests
 from datetime import datetime
 from flask import Flask, request, redirect, url_for
 
@@ -52,6 +54,22 @@ def init_db():
         print(f"DB init error: {e}")
         return False
 
+def get_outbound_ip():
+    """Fetch outbound public IP via NAT Gateway using ipify.org."""
+    try:
+        resp = requests.get('https://api.ipify.org?format=json', timeout=5)
+        if resp.status_code == 200:
+            data = resp.json()
+            return {
+                'ip': data.get('ip', 'N/A'),
+                'status': 'OK'
+            }
+    except requests.exceptions.Timeout:
+        return {'status': 'Timeout', 'ip': 'N/A'}
+    except Exception as e:
+        return {'status': f'Error: {e}', 'ip': 'N/A'}
+    return {'status': 'Failed', 'ip': 'N/A'}
+
 @app.route('/')
 def index():
     """Display hostname, messages list, and add form."""
@@ -69,6 +87,9 @@ def index():
     except Exception as e:
         db_status = f"Error: {e}"
         error_msg = str(e)
+
+    # Fetch outbound IP via NAT Gateway
+    outbound_ip = get_outbound_ip()
 
     # Build HTML response
     html = f"""<!DOCTYPE html>
@@ -103,6 +124,11 @@ def index():
     <div class="status {'ok' if db_status == 'Connected' else 'error'}">
         <strong>Database:</strong> {db_status}
         {f'<br><small>{SQL_SERVER} / {SQL_DATABASE}</small>' if db_status == 'Connected' else ''}
+    </div>
+
+    <div class="status {'ok' if outbound_ip['status'] == 'OK' else 'error'}">
+        <strong>NAT Gateway (Outbound IP):</strong> {outbound_ip['status']}
+        {f"<br><small>Public IP: {outbound_ip['ip']}</small>" if outbound_ip['status'] == 'OK' else ''}
     </div>
 
     <h2>Add Message</h2>
