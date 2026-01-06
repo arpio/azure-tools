@@ -7,12 +7,17 @@ This folder contains Infrastructure as Code (IaC) configuration to deploy a **Lo
 The deployed workload looks like this:
 ![architecture](images/lb-server-db.png)
 
-* A single standalone VM and two VMSS-based VMs are deployed
-* All servers are reachable through the Load Balancer
-* The servers are running a simple Flask app that reads and writes to the DB
+The workload includes the following resources:
+* Single standalone VM and multiple VMSS-based VMs
+* Azure SQL Database 
+* Load Balancer targeting both standalone and VMSS VMs
+* All servers are running a simple Flask app that reads and writes to the DB
 * Bastions are deployed to access the VMs
-* An Azure Storage Account is created
-* Code and scripts are uploaded to the Storage Account as Blob Storage for use by the VMs
+* Azure Storage Account containing code and scripts in Blob Storage for use by the VMs
+* NAT Gateway
+
+The Bicep template does all necessary initialization, including uploading the scripts and configuring VM user data to use them.
+
 ![alt text](images/demo_app.png)
 
 ## Deployment
