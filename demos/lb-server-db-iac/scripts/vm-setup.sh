@@ -10,7 +10,9 @@ apt-get update
 apt-get install -y python3 python3-pip python3-venv curl gnupg jq
 
 # Install Microsoft ODBC driver for SQL Server
-curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg
+if [ ! -f /usr/share/keyrings/microsoft-prod.gpg ]; then
+  curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg
+fi
 echo "deb [arch=amd64,arm64 signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/ubuntu/22.04/prod jammy main" > /etc/apt/sources.list.d/mssql-release.list
 apt-get update
 ACCEPT_EULA=Y apt-get install -y msodbcsql18 unixodbc-dev
@@ -72,4 +74,4 @@ SVCEOF
 # Enable and start the service
 systemctl daemon-reload
 systemctl enable demo-app
-systemctl start demo-app
+systemctl restart demo-app
