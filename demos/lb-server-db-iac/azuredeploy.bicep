@@ -657,13 +657,13 @@ resource sqldb 'Microsoft.Sql/servers/databases@2023-08-01' = {
   parent: sql
   location: location
   sku: {
-    name: 'GP_Gen5_2'
-    tier: 'GeneralPurpose'
-    capacity: 2
+    name: 'Basic'
+    tier: 'Basic'
+    capacity: 5
   }
   properties: {
     collation: 'SQL_Latin1_General_CP1_CI_AS'
-    maxSizeBytes: 268435456000
+    maxSizeBytes: 2147483648
   }
 }
 
