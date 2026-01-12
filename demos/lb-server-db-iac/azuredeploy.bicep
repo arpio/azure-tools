@@ -44,6 +44,10 @@ var scriptsBaseUrl = 'https://${scriptsStorageName}.blob.${environment().suffixe
 // Load scripts for upload to blob storage
 var setupScriptContent = loadTextContent('scripts/vm-setup.sh')
 var appPyContent = loadTextContent('scripts/app.py')
+var sampleCsvContent = loadTextContent('scripts/sample-data.csv')
+
+// Hash of script contents - forces VM extension re-run when scripts change
+var scriptsHash = uniqueString(setupScriptContent, appPyContent, sampleCsvContent)
 
 // DB connection info as JSON for userData (Arpio can update this for DR failover)
 var userDataJson = {
@@ -51,6 +55,8 @@ var userDataJson = {
   sqlDatabase: sqlDbName
   sqlUser: sqlAdminLogin
   sqlPassword: sqlAdminPassword
+  blobStorageUrl: scriptsBaseUrl
+  blobStorageAccount: scriptsStorageName
 }
 
 
@@ -237,6 +243,7 @@ resource scriptUploadRoleAssignment 'Microsoft.Authorization/roleAssignments@202
 }
 
 // Deployment script to upload setup scripts to blob storage
+// Runs once per deployment
 resource uploadScripts 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
   name: 'upload-vm-scripts'
   location: location
@@ -256,6 +263,7 @@ resource uploadScripts 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
       { name: 'CONTAINER_NAME', value: scriptsContainerName }
       { name: 'SETUP_SCRIPT', value: setupScriptContent }
       { name: 'APP_PY', value: appPyContent }
+      { name: 'SAMPLE_CSV', value: sampleCsvContent }
     ]
     scriptContent: '''
       set -e
@@ -263,11 +271,14 @@ resource uploadScripts 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
 
       echo "$SETUP_SCRIPT" > "$TEMP_DIR/vm-setup.sh"
       echo "$APP_PY" > "$TEMP_DIR/app.py"
+      echo "$SAMPLE_CSV" > "$TEMP_DIR/sample-data.csv"
 
       az storage blob upload --account-name "$STORAGE_ACCOUNT" --container-name "$CONTAINER_NAME" \
         --name vm-setup.sh --file "$TEMP_DIR/vm-setup.sh" --overwrite --auth-mode login
       az storage blob upload --account-name "$STORAGE_ACCOUNT" --container-name "$CONTAINER_NAME" \
         --name app.py --file "$TEMP_DIR/app.py" --overwrite --auth-mode login
+      az storage blob upload --account-name "$STORAGE_ACCOUNT" --container-name "$CONTAINER_NAME" \
+        --name sample-data.csv --file "$TEMP_DIR/sample-data.csv" --overwrite --auth-mode login
 
       echo "Scripts uploaded successfully to $STORAGE_ACCOUNT/$CONTAINER_NAME"
     '''
@@ -410,6 +421,7 @@ resource vmssCustomScript 'Microsoft.Compute/virtualMachineScaleSets/extensions@
     type: 'CustomScript'
     typeHandlerVersion: '2.1'
     autoUpgradeMinorVersion: true
+    forceUpdateTag: scriptsHash
     settings: {
       fileUris: [
         '${scriptsBaseUrl}/vm-setup.sh'
@@ -570,6 +582,7 @@ resource vmCustomScript 'Microsoft.Compute/virtualMachines/extensions@2023-09-01
     type: 'CustomScript'
     typeHandlerVersion: '2.1'
     autoUpgradeMinorVersion: true
+    forceUpdateTag: scriptsHash
     settings: {
       fileUris: [
         '${scriptsBaseUrl}/vm-setup.sh'
@@ -619,10 +632,14 @@ resource sqlAdminPwdSecret 'Microsoft.KeyVault/vaults/secrets@2025-05-01' = {
 resource sql 'Microsoft.Sql/servers@2023-08-01' = {
   name: sqlServerName
   location: location
+  identity: {
+    type: 'SystemAssigned'
+  }
   properties: {
     administratorLogin: sqlAdminLogin
     administratorLoginPassword: sqlAdminPassword
     publicNetworkAccess: 'Enabled'
+    restrictOutboundNetworkAccess: 'Enabled'
     version: '12.0'
   }
   // add tag arpio-config:admin-password-secret with value pointing to the URL of the secret
@@ -649,6 +666,24 @@ resource fwAllowAllIP 'Microsoft.Sql/servers/firewallRules@2023-08-01' = {
   properties: {
     startIpAddress: '0.0.0.0'
     endIpAddress: '255.255.255.255'
+  }
+}
+
+// Outbound firewall rule to allow SQL Server to connect to the scripts storage account
+resource outboundFwBlobStorage 'Microsoft.Sql/servers/outboundFirewallRules@2023-08-01' = {
+  name: '${scriptsStorageName}.blob.${environment().suffixes.storage}'
+  parent: sql
+}
+
+// Role assignment: Storage Blob Data Reader for SQL Server managed identity
+resource sqlBlobReaderRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(scriptsStorage.id, sql.id, 'Storage Blob Data Reader')
+  scope: scriptsStorage
+  properties: {
+    // Built-in role Storage Blob Data Reader: 2a2b9908-6ea1-4ae2-8e65-a410df84e7d1
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '2a2b9908-6ea1-4ae2-8e65-a410df84e7d1')
+    principalId: sql.identity.principalId
+    principalType: 'ServicePrincipal'
   }
 }
 

@@ -7,16 +7,18 @@ import os
 import socket
 import pyodbc
 import requests
-from datetime import datetime
-from flask import Flask, request, redirect, url_for
+from flask import Flask, request, redirect, url_for, session
 
 app = Flask(__name__)
+app.secret_key = 'demo-app-fixed-secret-key-for-load-balancer'
 
 # SQL connection info (injected by Bicep via vm-setup.sh)
 SQL_SERVER = os.environ.get('SQL_SERVER', '')
 SQL_DATABASE = os.environ.get('SQL_DATABASE', '')
 SQL_USER = os.environ.get('SQL_USER', '')
 SQL_PASSWORD = os.environ.get('SQL_PASSWORD', '')
+BLOB_STORAGE_URL = os.environ.get('BLOB_STORAGE_URL', '')
+BLOB_STORAGE_ACCOUNT = os.environ.get('BLOB_STORAGE_ACCOUNT', '')
 
 HOSTNAME = socket.gethostname()
 
@@ -54,6 +56,65 @@ def init_db():
         print(f"DB init error: {e}")
         return False
 
+def init_blob_access():
+    """Setup external data source for reading from blob storage."""
+    if not BLOB_STORAGE_ACCOUNT:
+        return False
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        # Create master key if not exists
+        cursor.execute("""
+            IF NOT EXISTS (SELECT * FROM sys.symmetric_keys WHERE name = '##MS_DatabaseMasterKey##')
+            CREATE MASTER KEY ENCRYPTION BY PASSWORD = 'BulkDemo123!'
+        """)
+        conn.commit()
+
+        # Create credential using managed identity
+        cursor.execute("""
+            IF NOT EXISTS (SELECT * FROM sys.database_scoped_credentials WHERE name = 'BlobStorageCredential')
+            CREATE DATABASE SCOPED CREDENTIAL BlobStorageCredential
+            WITH IDENTITY = 'Managed Identity'
+        """)
+        conn.commit()
+
+        # Check if external data source exists and has correct URL
+        cursor.execute("SELECT location FROM sys.external_data_sources WHERE name = 'BlobStorage'")
+        row = cursor.fetchone()
+
+        if row is None:
+            # Doesn't exist - create it
+            cursor.execute(f"""
+                CREATE EXTERNAL DATA SOURCE BlobStorage
+                WITH (
+                    TYPE = BLOB_STORAGE,
+                    LOCATION = '{BLOB_STORAGE_URL}',
+                    CREDENTIAL = BlobStorageCredential
+                )
+            """)
+            conn.commit()
+        elif row[0] != BLOB_STORAGE_URL:
+            # Exists but URL is wrong (e.g., after DR) - recreate it
+            cursor.execute("DROP EXTERNAL DATA SOURCE BlobStorage")
+            conn.commit()
+            cursor.execute(f"""
+                CREATE EXTERNAL DATA SOURCE BlobStorage
+                WITH (
+                    TYPE = BLOB_STORAGE,
+                    LOCATION = '{BLOB_STORAGE_URL}',
+                    CREDENTIAL = BlobStorageCredential
+                )
+            """)
+            conn.commit()
+        # else: exists and URL matches - do nothing
+
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"Blob access setup error: {e}")
+        return False
+
 def get_outbound_ip():
     """Fetch outbound public IP via NAT Gateway using ipify.org."""
     try:
@@ -75,7 +136,10 @@ def index():
     """Display hostname, messages list, and add form."""
     db_status = "Connected"
     messages = []
-    error_msg = ""
+
+    # Get any error/success messages from session
+    error_msg = session.pop('error', None)
+    success_msg = session.pop('success', None)
 
     try:
         conn = get_connection()
@@ -86,7 +150,6 @@ def index():
         conn.close()
     except Exception as e:
         db_status = f"Error: {e}"
-        error_msg = str(e)
 
     # Fetch outbound IP via NAT Gateway
     outbound_ip = get_outbound_ip()
@@ -112,6 +175,8 @@ def index():
         button:hover {{ background: #0056b3; }}
         .delete-btn {{ background: #dc3545; padding: 5px 10px; font-size: 12px; }}
         .delete-btn:hover {{ background: #c82333; }}
+        .blob-btn {{ background: #28a745; }}
+        .blob-btn:hover {{ background: #218838; }}
     </style>
 </head>
 <body>
@@ -131,10 +196,16 @@ def index():
         {f"<br><small>Public IP: {outbound_ip['ip']}</small>" if outbound_ip['status'] == 'OK' else ''}
     </div>
 
+    {f'<div class="status error"><strong>Error:</strong> {error_msg}</div>' if error_msg else ''}
+    {f'<div class="status ok"><strong>Success:</strong> {success_msg}</div>' if success_msg else ''}
+
     <h2>Add Message</h2>
-    <form method="POST" action="/add">
+    <form method="POST" action="/add" style="display: inline;">
         <input type="text" name="message" placeholder="Enter a message..." required>
         <button type="submit">Add</button>
+    </form>
+    <form method="POST" action="/import-from-blob" style="display: inline; margin-left: 10px;">
+        <button type="submit" class="blob-btn" title="Import messages from Azure Blob Storage using SQL Server managed identity">Import from Blob</button>
     </form>
 
     <h2>Messages</h2>
@@ -187,7 +258,7 @@ def add_message():
             conn.commit()
             conn.close()
         except Exception as e:
-            print(f"Add error: {e}")
+            session['error'] = f"Add message failed: {e}"
     return redirect(url_for('index'))
 
 @app.route('/delete/<int:msg_id>', methods=['POST'])
@@ -200,7 +271,46 @@ def delete_message(msg_id):
         conn.commit()
         conn.close()
     except Exception as e:
-        print(f"Delete error: {e}")
+        session['error'] = f"Delete failed: {e}"
+    return redirect(url_for('index'))
+
+@app.route('/import-from-blob', methods=['POST'])
+def import_from_blob():
+    """Import messages from blob storage CSV using SQL Server's outbound connection."""
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        # Ensure blob access is set up
+        init_blob_access()
+
+        # Read CSV from blob storage using OPENROWSET
+        cursor.execute("""
+            SELECT BulkColumn
+            FROM OPENROWSET(
+                BULK 'sample-data.csv',
+                DATA_SOURCE = 'BlobStorage',
+                SINGLE_CLOB
+            ) AS data
+        """)
+        csv_content = cursor.fetchone()[0]
+
+        # Parse CSV and insert messages
+        lines = csv_content.strip().split('\n')
+        count = 0
+        for line in lines[1:]:  # Skip header row
+            message = line.strip()
+            if message:
+                cursor.execute(
+                    "INSERT INTO messages (message, hostname) VALUES (?, ?)",
+                    (message, "Blob Import")
+                )
+                count += 1
+        conn.commit()
+        conn.close()
+        session['success'] = f"Imported {count} messages from blob storage"
+    except Exception as e:
+        session['error'] = f"Blob import failed: {e}"
     return redirect(url_for('index'))
 
 if __name__ == '__main__':

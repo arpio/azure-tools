@@ -1,0 +1,4 @@
+message
+[imported] Hello from Azure Blob Storage!
+[imported] This message was bulk imported via SQL Server outbound firewall rule.
+[imported] Azure SQL can read from blob storage using managed identity.

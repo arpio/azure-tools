@@ -18,6 +18,8 @@ export SQL_SERVER="localhost"
 export SQL_DATABASE="testdb"
 export SQL_USER="testuser"
 export SQL_PASSWORD="testpass"
+export BLOB_STORAGE_URL="https://localhost/mock-container"
+export BLOB_STORAGE_ACCOUNT="mockstorageaccount"
 
 echo "Starting Flask app on http://localhost:8080"
 echo "Press Ctrl+C to stop"

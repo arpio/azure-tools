@@ -43,6 +43,8 @@ export SQL_SERVER=$(echo "$USER_DATA" | jq -r '.sqlServer')
 export SQL_DATABASE=$(echo "$USER_DATA" | jq -r '.sqlDatabase')
 export SQL_USER=$(echo "$USER_DATA" | jq -r '.sqlUser')
 export SQL_PASSWORD=$(echo "$USER_DATA" | jq -r '.sqlPassword')
+export BLOB_STORAGE_URL=$(echo "$USER_DATA" | jq -r '.blobStorageUrl')
+export BLOB_STORAGE_ACCOUNT=$(echo "$USER_DATA" | jq -r '.blobStorageAccount')
 
 # Start gunicorn with the Flask app
 exec /opt/demo-app/venv/bin/gunicorn --bind 0.0.0.0:80 --workers 2 \
