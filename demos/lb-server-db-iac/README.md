@@ -22,6 +22,11 @@ The Bicep template does all necessary initialization, including uploading the sc
 
 ## Deployment
 
+Inspect the [`azuredeploy.bicepparam`](./azuredeploy.bicepparam) parameters file and make any changes. Specifically you may want to change 
+* `location`: The region the workload is deployed to
+* `vmSku`: Choose a VM SKU available in your chosen region
+* `sshPublicKey`: If you want to be able to use the Bastion to ssh to the VMs, replace this with a public key for which you have access to the private key
+
 Ensure you are in the correct subscription
 ```bash
 az account set --subscription <subscription_id>
