@@ -42,13 +42,7 @@ bash build_image.sh
 
 This creates an Azure Container Registry and builds/pushes the image. Note the output values for `acrName` and `containerImage`.
 
-If you get this error
-```
-Code: MissingSubscriptionRegistration
-Message: The subscription is not registered to use namespace 'Microsoft.ContainerRegistry'. See https://aka.ms/rps-not-found for how to register subscriptions.
-```
-
-Then you need to first the following and let it complete (it can take a few minutes)
+If you get this error: `MissingSubscriptionRegistration`, then you need to first execute the following command and let it complete (it can take a few minutes)
 ```bash
 az provider register --namespace Microsoft.ContainerRegistry
 ```
