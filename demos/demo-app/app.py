@@ -23,8 +23,10 @@ QUEUE_ACCOUNT_URL = os.environ.get('QUEUE_ACCOUNT_URL', '')
 QUEUE_NAME = os.environ.get('QUEUE_NAME', 'demo-queue')
 BLOB_CONTAINER = os.environ.get('BLOB_CONTAINER', 'demo-blobs')
 AZURE_CLIENT_ID = os.environ.get('AZURE_CLIENT_ID', '')
+CONTAINER_NAME = os.environ.get('CONTAINER_NAME', '')
 
 HOSTNAME = socket.gethostname()
+DISPLAY_NAME = f'{CONTAINER_NAME} ({HOSTNAME})' if CONTAINER_NAME else HOSTNAME
 
 # Azure clients (lazy-initialized)
 _credential = None
@@ -156,13 +158,13 @@ def page_header(title, active=None):
     return f"""<!DOCTYPE html>
 <html>
 <head>
-    <title>{title} - {HOSTNAME}</title>
+    <title>{title} - {DISPLAY_NAME}</title>
     <style>{STYLE}
     </style>
 </head>
 <body>
     <h1>{title}</h1>
-    <div class="hostname"><strong>Hostname:</strong> {HOSTNAME}</div>
+    <div class="hostname"><strong>Container:</strong> {DISPLAY_NAME}</div>
     <div class="nav">{nav_html}</div>
     {flash}
 """

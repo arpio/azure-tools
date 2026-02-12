@@ -62,7 +62,7 @@ echo ""
 echo "--- Ensuring ACR '$ACR_NAME' exists ---"
 if ! az acr show -n "$ACR_NAME" -g "$RESOURCE_GROUP" &>/dev/null; then
     echo "Creating ACR '$ACR_NAME' (Basic SKU)..."
-    az acr create -n "$ACR_NAME" -g "$RESOURCE_GROUP" -l "$LOCATION" --sku Basic --admin-enabled true -o none
+    az acr create -n "$ACR_NAME" -g "$RESOURCE_GROUP" -l "$LOCATION" --sku Basic --admin-enabled false -o none
 else
     echo "ACR '$ACR_NAME' already exists."
 fi
