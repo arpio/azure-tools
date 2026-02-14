@@ -4,6 +4,8 @@ Deploys an **Application Gateway → Azure Container Instances** stack with **Ke
 
 ## Architecture
 
+![architecture](./images/appgw-container-architecture.jpg)
+
 ```
 Internet → Application Gateway (public IP)
                ↓ HTTP :80
