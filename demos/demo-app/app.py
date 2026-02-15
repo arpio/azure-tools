@@ -2,9 +2,11 @@
 Flask demo app - Key Vault secrets, Blob Storage, and Queue Storage operations.
 Displays hostname and provides CRUD for Azure services via managed identity.
 """
+import ipaddress
 import os
 import socket
 import html as html_lib
+from urllib.parse import urlparse
 
 from flask import Flask, request, redirect, url_for, session
 
@@ -64,6 +66,19 @@ def get_queue_client():
     if _queue_client is None and QUEUE_ACCOUNT_URL:
         _queue_client = QueueClient(account_url=QUEUE_ACCOUNT_URL, queue_name=QUEUE_NAME, credential=get_credential())
     return _queue_client
+
+
+def resolve_endpoint(url):
+    """Resolve a service URL and check if it uses a private endpoint (private IP)."""
+    if not url:
+        return None
+    try:
+        hostname = urlparse(url).hostname
+        ip = socket.gethostbyname(hostname)
+        is_private = ipaddress.ip_address(ip).is_private
+        return {'hostname': hostname, 'ip': ip, 'private': is_private}
+    except Exception as e:
+        return {'hostname': urlparse(url).hostname, 'ip': None, 'error': str(e)}
 
 
 def check_service(name, check_fn):
@@ -204,6 +219,49 @@ def index():
         {f'<br><small>{html_lib.escape(QUEUE_ACCOUNT_URL)}/{html_lib.escape(QUEUE_NAME)}</small>' if QUEUE_ACCOUNT_URL else ''}
     </div>
 """
+    # Private endpoint detection via DNS resolution
+    endpoints = [
+        ('Key Vault', KEY_VAULT_URL),
+        ('Blob Storage', STORAGE_ACCOUNT_URL),
+        ('Queue Storage', QUEUE_ACCOUNT_URL),
+    ]
+    resolved = [(name, resolve_endpoint(url)) for name, url in endpoints]
+    pe_count = sum(1 for _, r in resolved if r and r.get('private'))
+    total = sum(1 for _, r in resolved if r)
+
+    if total > 0:
+        if pe_count == total:
+            pe_summary_class = 'ok'
+            pe_summary = 'All endpoints resolve to private IPs'
+        elif pe_count > 0:
+            pe_summary_class = 'ok'
+            pe_summary = f'{pe_count}/{total} endpoints resolve to private IPs'
+        else:
+            pe_summary_class = 'error'
+            pe_summary = 'No private endpoints detected (all resolving to public IPs)'
+
+        html += f"""
+    <h2>Private Endpoints</h2>
+    <div class="status {pe_summary_class}"><strong>Status:</strong> {pe_summary}</div>
+    <table>
+        <tr><th>Service</th><th>Hostname</th><th>Resolved IP</th><th>Private?</th></tr>
+"""
+        for name, r in resolved:
+            if r is None:
+                continue
+            ip_display = r.get('ip') or f'error: {html_lib.escape(r.get("error", "unknown"))}'
+            is_private = r.get('private', False)
+            private_display = 'Yes' if is_private else 'No'
+            row_class = 'ok' if is_private else 'error'
+            html += f"""        <tr>
+            <td>{html_lib.escape(name)}</td>
+            <td><small>{html_lib.escape(r.get('hostname', ''))}</small></td>
+            <td><code>{ip_display}</code></td>
+            <td><span class="status {row_class}" style="display:inline;padding:2px 8px;font-size:12px;">{private_display}</span></td>
+        </tr>
+"""
+        html += '    </table>'
+
     html += PAGE_FOOTER
     return html
 

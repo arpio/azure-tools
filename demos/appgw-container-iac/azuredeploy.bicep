@@ -29,12 +29,18 @@ param acrResourceGroup string
 @description('Full container image URI, e.g. myacr.azurecr.io/demo-app:latest')
 param containerImage string
 
+@description('Deploy private endpoints for Storage and Key Vault. When false, services are publicly accessible.')
+param usePrivateEndpoints bool = true
+
 // ---------- Variables ----------
 
 // Deterministic unique suffix derived from subscription + resource group + deployment name.
 // Used to generate globally unique names for storage accounts and key vaults.
 var uniqueSuffix = uniqueString(subscription().id, resourceGroup().id, deployment().name)
 var vnetName = 'vnet-${baseName}'
+var subnetAppGwPrefix = '10.1.0.0/24'
+var subnetAciPrefix = '10.1.1.0/24'
+var subnetPePrefix = '10.1.2.0/24'
 var storageAccountName = toLower('st${uniqueSuffix}')
 var kvName = 'kv-${uniqueSuffix}'
 var blobContainerName = 'demo-blobs'
@@ -119,7 +125,7 @@ resource nsgAci 'Microsoft.Network/networkSecurityGroups@2023-11-01' = {
           protocol: 'Tcp'
           sourcePortRange: '*'
           destinationPortRange: '8000'
-          sourceAddressPrefix: '10.1.0.0/24' // App Gateway subnet
+          sourceAddressPrefix: subnetAppGwPrefix
           destinationAddressPrefix: '*'
         }
       }
@@ -128,7 +134,7 @@ resource nsgAci 'Microsoft.Network/networkSecurityGroups@2023-11-01' = {
 }
 
 // NSG for private endpoint subnet - only allows HTTPS from ACI subnet
-resource nsgPe 'Microsoft.Network/networkSecurityGroups@2023-11-01' = {
+resource nsgPe 'Microsoft.Network/networkSecurityGroups@2023-11-01' = if (usePrivateEndpoints) {
   name: 'nsg-pe'
   location: location
   properties: {
@@ -142,7 +148,7 @@ resource nsgPe 'Microsoft.Network/networkSecurityGroups@2023-11-01' = {
           protocol: 'Tcp'
           sourcePortRange: '*'
           destinationPortRange: '443'
-          sourceAddressPrefix: '10.1.1.0/24' // ACI subnet
+          sourceAddressPrefix: subnetAciPrefix
           destinationAddressPrefix: '*'
         }
       }
@@ -155,11 +161,11 @@ resource vnet 'Microsoft.Network/virtualNetworks@2023-11-01' = {
   location: location
   properties: {
     addressSpace: { addressPrefixes: ['10.1.0.0/16'] }
-    subnets: [
+    subnets: concat([
       {
         name: 'subnet-appgw'
         properties: {
-          addressPrefix: '10.1.0.0/24'
+          addressPrefix: subnetAppGwPrefix
           networkSecurityGroup: { id: nsgAppGw.id }
         }
       }
@@ -168,7 +174,7 @@ resource vnet 'Microsoft.Network/virtualNetworks@2023-11-01' = {
         // for container groups placed here
         name: 'subnet-aci'
         properties: {
-          addressPrefix: '10.1.1.0/24'
+          addressPrefix: subnetAciPrefix
           networkSecurityGroup: { id: nsgAci.id }
           delegations: [
             {
@@ -180,14 +186,15 @@ resource vnet 'Microsoft.Network/virtualNetworks@2023-11-01' = {
           ]
         }
       }
+    ], usePrivateEndpoints ? [
       {
         name: 'subnet-pe'
         properties: {
-          addressPrefix: '10.1.2.0/24'
+          addressPrefix: subnetPePrefix
           networkSecurityGroup: { id: nsgPe.id }
         }
       }
-    ]
+    ] : [])
   }
 }
 
@@ -220,7 +227,7 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
     allowBlobPublicAccess: false
     minimumTlsVersion: 'TLS1_2'
     networkAcls: {
-      defaultAction: 'Deny'
+      defaultAction: usePrivateEndpoints ? 'Deny' : 'Allow'
       bypass: 'AzureServices'
     }
   }
@@ -263,7 +270,7 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
     enabledForDeployment: false
     enabledForTemplateDeployment: true
     networkAcls: {
-      defaultAction: 'Deny'
+      defaultAction: usePrivateEndpoints ? 'Deny' : 'Allow'
       bypass: 'AzureServices'
     }
   }
@@ -285,24 +292,24 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
 
 // --- DNS Zones ---
 
-resource dnsZoneBlob 'Microsoft.Network/privateDnsZones@2020-06-01' = {
+resource dnsZoneBlob 'Microsoft.Network/privateDnsZones@2020-06-01' = if (usePrivateEndpoints) {
   name: 'privatelink.blob.${environment().suffixes.storage}'
   location: 'global'
 }
 
-resource dnsZoneQueue 'Microsoft.Network/privateDnsZones@2020-06-01' = {
+resource dnsZoneQueue 'Microsoft.Network/privateDnsZones@2020-06-01' = if (usePrivateEndpoints) {
   name: 'privatelink.queue.${environment().suffixes.storage}'
   location: 'global'
 }
 
-resource dnsZoneKv 'Microsoft.Network/privateDnsZones@2020-06-01' = {
+resource dnsZoneKv 'Microsoft.Network/privateDnsZones@2020-06-01' = if (usePrivateEndpoints) {
   name: 'privatelink.vaultcore.azure.net'
   location: 'global'
 }
 
 // --- VNet links: connect each DNS zone to the VNet so DNS resolution works ---
 
-resource dnsZoneBlobLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2020-06-01' = {
+resource dnsZoneBlobLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2020-06-01' = if (usePrivateEndpoints) {
   parent: dnsZoneBlob
   name: 'link-blob'
   location: 'global'
@@ -312,7 +319,7 @@ resource dnsZoneBlobLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@
   }
 }
 
-resource dnsZoneQueueLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2020-06-01' = {
+resource dnsZoneQueueLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2020-06-01' = if (usePrivateEndpoints) {
   parent: dnsZoneQueue
   name: 'link-queue'
   location: 'global'
@@ -322,7 +329,7 @@ resource dnsZoneQueueLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks
   }
 }
 
-resource dnsZoneKvLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2020-06-01' = {
+resource dnsZoneKvLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2020-06-01' = if (usePrivateEndpoints) {
   parent: dnsZoneKv
   name: 'link-kv'
   location: 'global'
@@ -336,7 +343,7 @@ resource dnsZoneKvLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@20
 // Each endpoint creates a NIC in subnet-pe. The DNS zone group automatically
 // registers an A record in the private DNS zone pointing to that NIC's IP.
 
-resource peBlobStorage 'Microsoft.Network/privateEndpoints@2023-11-01' = {
+resource peBlobStorage 'Microsoft.Network/privateEndpoints@2023-11-01' = if (usePrivateEndpoints) {
   name: 'pe-blob'
   location: location
   properties: {
@@ -356,7 +363,7 @@ resource peBlobStorage 'Microsoft.Network/privateEndpoints@2023-11-01' = {
   dependsOn: [vnet]
 }
 
-resource peBlobDnsGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2023-11-01' = {
+resource peBlobDnsGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2023-11-01' = if (usePrivateEndpoints) {
   parent: peBlobStorage
   name: 'blob-dns-group'
   properties: {
@@ -372,7 +379,7 @@ resource peBlobDnsGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups
   dependsOn: [dnsZoneBlobLink]
 }
 
-resource peQueueStorage 'Microsoft.Network/privateEndpoints@2023-11-01' = {
+resource peQueueStorage 'Microsoft.Network/privateEndpoints@2023-11-01' = if (usePrivateEndpoints) {
   name: 'pe-queue'
   location: location
   properties: {
@@ -392,7 +399,7 @@ resource peQueueStorage 'Microsoft.Network/privateEndpoints@2023-11-01' = {
   dependsOn: [vnet]
 }
 
-resource peQueueDnsGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2023-11-01' = {
+resource peQueueDnsGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2023-11-01' = if (usePrivateEndpoints) {
   parent: peQueueStorage
   name: 'queue-dns-group'
   properties: {
@@ -408,7 +415,7 @@ resource peQueueDnsGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroup
   dependsOn: [dnsZoneQueueLink]
 }
 
-resource peKeyVault 'Microsoft.Network/privateEndpoints@2023-11-01' = {
+resource peKeyVault 'Microsoft.Network/privateEndpoints@2023-11-01' = if (usePrivateEndpoints) {
   name: 'pe-kv'
   location: location
   properties: {
@@ -428,7 +435,7 @@ resource peKeyVault 'Microsoft.Network/privateEndpoints@2023-11-01' = {
   dependsOn: [vnet]
 }
 
-resource peKvDnsGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2023-11-01' = {
+resource peKvDnsGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2023-11-01' = if (usePrivateEndpoints) {
   parent: peKeyVault
   name: 'kv-dns-group'
   properties: {
