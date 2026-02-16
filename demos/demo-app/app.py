@@ -255,7 +255,7 @@ def index():
             row_class = 'ok' if is_private else 'error'
             html += f"""        <tr>
             <td>{html_lib.escape(name)}</td>
-            <td><small>{html_lib.escape(r.get('hostname', ''))}</small></td>
+            <td><small>{html_lib.escape(r.get('hostname') or '')}</small></td>
             <td><code>{ip_display}</code></td>
             <td><span class="status {row_class}" style="display:inline;padding:2px 8px;font-size:12px;">{private_display}</span></td>
         </tr>
