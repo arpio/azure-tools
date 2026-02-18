@@ -466,7 +466,7 @@ resource peKvDnsGroup 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@2
 // ============================================================================
 
 resource aciIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
-  name: 'id-aci'
+  name: 'managed-id-aci'
   location: location
 }
 
