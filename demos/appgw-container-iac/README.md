@@ -65,7 +65,10 @@ param containerImage = 'demoacrXXXXX.azurecr.io/demo-app:latest'
 cd ../appgw-container-iac
 
 az group create -n rg-appgw-aci -l centralus
+```
+Region should match `location` in `azuredeploy.bicepparam`
 
+```
 az deployment group create \
   --name appgw-aci-deploy \
   --resource-group rg-appgw-aci \
