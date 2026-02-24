@@ -35,7 +35,9 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Append deterministic suffix for global uniqueness (ACR names must be globally unique)
-SUFFIX=$(printf '%s' "$RESOURCE_GROUP" | shasum | head -c 5)
+# Suffix depends on resource group and subscription
+SUB_ID=$(az account show --query id -o tsv)
+SUFFIX=$(printf '%s' "$RESOURCE_GROUP-$SUB_ID" | shasum | head -c 5)
 ACR_NAME="${ACR_NAME}${SUFFIX}"
 
 echo ""
