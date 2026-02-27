@@ -74,15 +74,16 @@ VNet peering connections are managed in the Hub resource group.
 ### App 1 VNet (Multi-Tier Application)
 #### Key Vault
 - **`{prefix}-app1-kv`** - Stores the VM admin password as a secret named `AdminPassword`
+  - Name is derived as `{take(prefix, 15)}-app1-kv` to stay within the 24-character Key Vault name limit
   - RBAC-based access control
   - The VMSS is tagged with `arpio-config:admin-password-secret` pointing to the secret URL
 
 #### Web Subnet
 - **Public Load Balancer** - Distributes HTTP/HTTPS traffic
-- **Linux VMSS** (Ubuntu 22.04) - Auto-scaling web tier with nginx
+- **Linux VMSS** (Ubuntu 22.04) - Auto-scaling web tier with Python HTTP server (`python3 -m http.server 80`)
   - System Assigned Managed Identity
   - Application Security Group
-  - Ports 80/443 exposed via load balancer
+  - Port 80 exposed via load balancer
   - SSH/RDP blocked from internet (only via Bastion)
   - Tagged with `arpio-config:admin-password-secret` → Key Vault secret URL
 
@@ -285,7 +286,7 @@ App 1 ↔ App 2 (via Hub - no direct peering)
 - Route tables force traffic through Hub
 
 ### Identity & Access
-- System Assigned Identity for VMSS
+- System Assigned Identity for VMSS — granted **Key Vault Secrets User** role on the App 1 Key Vault, enabling the `arpio-config:admin-password-secret` tag to resolve at recovery time
 - User Assigned Identity for App 2 VM
 - Azure Bastion for secure access
 - No public IPs on VMs (except via load balancer)

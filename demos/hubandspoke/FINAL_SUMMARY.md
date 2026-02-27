@@ -15,7 +15,7 @@
 {prefix}-app1-rg/
 ├── App 1 VNet (10.1.0.0/16)
 ├── Public Load Balancer
-├── Linux VMSS (Ubuntu 22.04 with nginx)
+├── Linux VMSS (Ubuntu 22.04 with Python HTTP server)
 ├── Database VM (Ubuntu 22.04 with MySQL)
 ├── NSGs & Application Security Groups
 └── VNet Peering (App1 → Hub)

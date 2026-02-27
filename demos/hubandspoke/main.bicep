@@ -113,9 +113,6 @@ module app1Vnet 'script/modules/app1-vnet.bicep' = {
     vmSizeLinux: vmSizeLinux
     tags: tags
   }
-  dependsOn: [
-    hubVnet
-  ]
 }
 
 // ============================================
@@ -135,9 +132,6 @@ module app2Vnet 'script/modules/app2-vnet.bicep' = {
     vmSize: vmSizeWindows
     tags: tags
   }
-  dependsOn: [
-    hubVnet
-  ]
 }
 
 // ============================================
@@ -156,10 +150,6 @@ module hubToApp1Peering 'script/modules/vnet-peering.bicep' = {
     allowGatewayTransit: true
     useRemoteGateways: false
   }
-  dependsOn: [
-    hubVnet
-    app1Vnet
-  ]
 }
 
 // App1 to Hub peering
@@ -174,10 +164,6 @@ module app1ToHubPeering 'script/modules/vnet-peering.bicep' = {
     allowGatewayTransit: false
     useRemoteGateways: true
   }
-  dependsOn: [
-    hubVnet
-    app1Vnet
-  ]
 }
 
 // Hub to App2 peering
@@ -192,10 +178,6 @@ module hubToApp2Peering 'script/modules/vnet-peering.bicep' = {
     allowGatewayTransit: true
     useRemoteGateways: false
   }
-  dependsOn: [
-    hubVnet
-    app2Vnet
-  ]
 }
 
 // App2 to Hub peering
@@ -210,10 +192,7 @@ module app2ToHubPeering 'script/modules/vnet-peering.bicep' = {
     allowGatewayTransit: false
     useRemoteGateways: true
   }
-  dependsOn: [
-    hubVnet
-    app2Vnet
-  ]}
+}
 
 // ============================================
 // Optional: PaaS Application Stack
@@ -239,7 +218,7 @@ module paasApplication 'script/modules/paas-application.bicep' = if (deployPaasA
 output hubResourceGroupName string = hubRg.name
 output app1ResourceGroupName string = app1Rg.name
 output app2ResourceGroupName string = app2Rg.name
-output paasResourceGroupName string = deployPaasApplication ? paasRg.name : ''
+output paasResourceGroupName string = deployPaasApplication ? paasRg!.name : ''
 
 // Hub VNet outputs
 output hubVnetId string = hubVnet.outputs.hubVnetId
@@ -273,7 +252,7 @@ output connectionInstructions string = '''
 Resource Groups:
 - Hub: ${hubRg.name}
 - App 1: ${app1Rg.name}
-- App 2: ${app2Rg.name}${deployPaasApplication ? '\n- PaaS: ${paasRg.name}' : ''}
+- App 2: ${app2Rg.name}${deployPaasApplication ? concat('\n- PaaS: ', paasRg!.name) : ''}
 
 1. Azure Bastion: Connect via Azure Portal
    - Go to the ${hubRg.name} resource group

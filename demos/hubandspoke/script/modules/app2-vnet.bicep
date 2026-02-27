@@ -207,7 +207,7 @@ resource windowsVm 'Microsoft.Compute/virtualMachines@2023-09-01' = {
       }
     }
     osProfile: {
-      computerName: '${resourcePrefix}app2'
+      computerName: take('${resourcePrefix}app2', 15) // Windows enforces a 15-char limit
       adminUsername: adminUsername
       adminPassword: adminPassword
       windowsConfiguration: {

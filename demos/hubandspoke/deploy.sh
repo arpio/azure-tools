@@ -191,42 +191,47 @@ print_section "Starting Deployment"
 print_info "Deployment name: $DEPLOYMENT_NAME"
 print_info "This will take 45-60 minutes due to VPN Gateway deployment..."
 
-# Build parameters
-PARAMS="resourcePrefix=$RESOURCE_PREFIX \
-  location=$LOCATION \
-  adminUsername=$ADMIN_USERNAME \
-  adminPassword=$ADMIN_PASSWORD \
-  hubVnetAddressPrefix=$HUB_VNET_PREFIX \
-  app1VnetAddressPrefix=$APP1_VNET_PREFIX \
-  app2VnetAddressPrefix=$APP2_VNET_PREFIX \
-  vmSizeLinux=$VM_SIZE_LINUX \
-  vmSizeWindows=$VM_SIZE_WINDOWS \
-  vmssInstanceCount=$VMSS_COUNT"
+# Build parameters as an array so each value is individually quoted,
+# preventing word-splitting on passwords with spaces or special characters
+DEPLOY_PARAMS=(
+    --parameters "resourcePrefix=$RESOURCE_PREFIX"
+    --parameters "location=$LOCATION"
+    --parameters "adminUsername=$ADMIN_USERNAME"
+    --parameters "adminPassword=$ADMIN_PASSWORD"
+    --parameters "hubVnetAddressPrefix=$HUB_VNET_PREFIX"
+    --parameters "app1VnetAddressPrefix=$APP1_VNET_PREFIX"
+    --parameters "app2VnetAddressPrefix=$APP2_VNET_PREFIX"
+    --parameters "vmSizeLinux=$VM_SIZE_LINUX"
+    --parameters "vmSizeWindows=$VM_SIZE_WINDOWS"
+    --parameters "vmssInstanceCount=$VMSS_COUNT"
+)
 
 # Add PaaS parameters if enabled
 if [ "$DEPLOY_PAAS" == "yes" ]; then
-    PARAMS="$PARAMS \
-  deployPaasApplication=true \
-  paasSecretValue=$PAAS_SECRET"
+    DEPLOY_PARAMS+=(
+        --parameters "deployPaasApplication=true"
+        --parameters "paasSecretValue=$PAAS_SECRET"
+    )
 fi
 
-# Deploy
-az deployment sub create \
-  --name "$DEPLOYMENT_NAME" \
-  --location "$LOCATION" \
-  --template-file main.bicep \
-  --parameters $PARAMS \
-  --verbose
+# Deploy — placed directly in `if` condition so the error branch is reachable
+# even with `set -e` active at the top of the script
+if az deployment sub create \
+    --name "$DEPLOYMENT_NAME" \
+    --location "$LOCATION" \
+    --template-file main.bicep \
+    "${DEPLOY_PARAMS[@]}" \
+    --verbose; then
 
-if [ $? -eq 0 ]; then
     print_section "Deployment Successful!"
-    
+
     # Get outputs
     print_info "Deployment outputs:"
     az deployment sub show \
-      --name "$DEPLOYMENT_NAME" \
-      --query properties.outputs
-    
+        --name "$DEPLOYMENT_NAME" \
+        --query properties.outputs \
+        -o json
+
     echo ""
     print_info "Resource Groups Created:"
     print_info "  Hub: ${RESOURCE_PREFIX}-hub-rg"
@@ -235,32 +240,36 @@ if [ $? -eq 0 ]; then
     if [ "$DEPLOY_PAAS" == "yes" ]; then
         print_info "  PaaS: ${RESOURCE_PREFIX}-paas-rg"
     fi
-    
+
     echo ""
     print_info "To connect to VMs:"
     print_info "1. Go to Azure Portal"
     print_info "2. Navigate to ${RESOURCE_PREFIX}-hub-rg"
     print_info "3. Find the Bastion resource"
     print_info "4. Use Bastion to connect to any VM"
-    
+
     echo ""
     print_info "Access App 1 Load Balancer at:"
     LB_IP=$(az deployment sub show --name "$DEPLOYMENT_NAME" --query 'properties.outputs.app1LoadBalancerPublicIp.value' -o tsv)
-    print_info "  http://$LB_IP"
-    
+    if [ -n "$LB_IP" ]; then
+        print_info "  http://$LB_IP"
+    else
+        print_warning "  Load balancer IP not available in deployment outputs"
+    fi
+
     # Show PaaS outputs if deployed
     if [ "$DEPLOY_PAAS" == "yes" ]; then
         echo ""
         print_info "PaaS Application - Access via Application Gateway:"
         PAAS_APPGW_IP=$(az deployment sub show --name "$DEPLOYMENT_NAME" --query 'properties.outputs.paasAppGatewayPublicIp.value' -o tsv 2>/dev/null)
-        
+
         if [ -n "$PAAS_APPGW_IP" ]; then
             print_info "  App Service (80/443): http://$PAAS_APPGW_IP"
             print_info "  Container Instance (8080): http://$PAAS_APPGW_IP:8080"
             print_warning "  Note: App Service and Container are NOT directly accessible"
         fi
     fi
-    
+
 else
     print_error "Deployment failed. Check error messages above."
     exit 1

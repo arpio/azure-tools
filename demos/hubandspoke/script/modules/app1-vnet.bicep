@@ -368,11 +368,24 @@ resource loadBalancer 'Microsoft.Network/loadBalancers@2023-05-01' = {
           disablePasswordAuthentication: false
         }
         customData: base64('''#!/bin/bash
-          apt-get update
-          apt-get install -y nginx
-          systemctl start nginx
-          systemctl enable nginx
+          mkdir -p /var/www/html
           echo "<h1>App 1 Web Server - $(hostname)</h1>" > /var/www/html/index.html
+          {
+            echo "[Unit]"
+            echo "Description=App 1 Web Server"
+            echo "After=network.target"
+            echo "[Service]"
+            echo "Type=simple"
+            echo "User=root"
+            echo "WorkingDirectory=/var/www/html"
+            echo "ExecStart=/usr/bin/python3 -m http.server 80"
+            echo "Restart=always"
+            echo "[Install]"
+            echo "WantedBy=multi-user.target"
+          } > /etc/systemd/system/webapp.service
+          systemctl daemon-reload
+          systemctl enable webapp
+          systemctl start webapp
         ''')
       }
       networkProfile: {
@@ -480,7 +493,8 @@ resource dbVm 'Microsoft.Compute/virtualMachines@2023-09-01' = {
 // Key Vault with Admin Password Secret
 // ============================================
 resource keyVault 'Microsoft.KeyVault/vaults@2023-02-01' = {
-  name: '${resourcePrefix}-app1-kv'
+  // Key Vault names are capped at 24 chars; truncate prefix to keep total within limit
+  name: '${take(resourcePrefix, 15)}-app1-kv'
   location: location
   tags: tags
   properties: {
@@ -500,6 +514,17 @@ resource adminPasswordSecret 'Microsoft.KeyVault/vaults/secrets@2023-02-01' = {
   name: 'AdminPassword'
   properties: {
     value: adminPassword
+  }
+}
+
+// Grant VMSS system identity read access to Key Vault secrets (required for arpio-config tag to work)
+resource vmssKeyVaultRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(keyVault.id, vmss.id, 'Key Vault Secrets User')
+  scope: keyVault
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6') // Key Vault Secrets User
+    principalId: vmss.identity.principalId
+    principalType: 'ServicePrincipal'
   }
 }
 
