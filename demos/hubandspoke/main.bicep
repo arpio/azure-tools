@@ -84,7 +84,7 @@ resource paasRg 'Microsoft.Resources/resourceGroups@2021-04-01' = if (deployPaas
 // ============================================
 // Hub VNet (Landing Zone)
 // ============================================
-module hubVnet 'script/modules/hub-vnet.bicep' = {
+module hubVnet 'modules/hub-vnet.bicep' = {
   scope: hubRg
   name: 'deploy-hub-vnet'
   params: {
@@ -98,7 +98,7 @@ module hubVnet 'script/modules/hub-vnet.bicep' = {
 // ============================================
 // App 1 VNet (VMSS + Database VM)
 // ============================================
-module app1Vnet 'script/modules/app1-vnet.bicep' = {
+module app1Vnet 'modules/app1-vnet.bicep' = {
   scope: app1Rg
   name: 'deploy-app1-vnet'
   params: {
@@ -118,7 +118,7 @@ module app1Vnet 'script/modules/app1-vnet.bicep' = {
 // ============================================
 // App 2 VNet (Windows VM)
 // ============================================
-module app2Vnet 'script/modules/app2-vnet.bicep' = {
+module app2Vnet 'modules/app2-vnet.bicep' = {
   scope: app2Rg
   name: 'deploy-app2-vnet'
   params: {
@@ -139,7 +139,7 @@ module app2Vnet 'script/modules/app2-vnet.bicep' = {
 // ============================================
 
 // Hub to App1 peering
-module hubToApp1Peering 'script/modules/vnet-peering.bicep' = {
+module hubToApp1Peering 'modules/vnet-peering.bicep' = {
   scope: hubRg
   name: 'deploy-hub-app1-peering'
   params: {
@@ -153,7 +153,7 @@ module hubToApp1Peering 'script/modules/vnet-peering.bicep' = {
 }
 
 // App1 to Hub peering
-module app1ToHubPeering 'script/modules/vnet-peering.bicep' = {
+module app1ToHubPeering 'modules/vnet-peering.bicep' = {
   scope: app1Rg
   name: 'deploy-app1-hub-peering'
   params: {
@@ -167,7 +167,7 @@ module app1ToHubPeering 'script/modules/vnet-peering.bicep' = {
 }
 
 // Hub to App2 peering
-module hubToApp2Peering 'script/modules/vnet-peering.bicep' = {
+module hubToApp2Peering 'modules/vnet-peering.bicep' = {
   scope: hubRg
   name: 'deploy-hub-app2-peering'
   params: {
@@ -181,7 +181,7 @@ module hubToApp2Peering 'script/modules/vnet-peering.bicep' = {
 }
 
 // App2 to Hub peering
-module app2ToHubPeering 'script/modules/vnet-peering.bicep' = {
+module app2ToHubPeering 'modules/vnet-peering.bicep' = {
   scope: app2Rg
   name: 'deploy-app2-hub-peering'
   params: {
@@ -198,7 +198,7 @@ module app2ToHubPeering 'script/modules/vnet-peering.bicep' = {
 // Optional: PaaS Application Stack
 // (Standalone, not connected to hub-spoke VNets)
 // ============================================
-module paasApplication 'script/modules/paas-application.bicep' = if (deployPaasApplication) {
+module paasApplication 'modules/paas-application.bicep' = if (deployPaasApplication) {
   scope: paasRg
   name: 'deploy-paas-application'
   params: {

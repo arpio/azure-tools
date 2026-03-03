@@ -69,6 +69,10 @@ if [ -z "$RESOURCE_PREFIX" ]; then
     print_error "Resource prefix is required"
     exit 1
 fi
+if [[ ! "$RESOURCE_PREFIX" =~ ^[a-zA-Z][a-zA-Z0-9-]*$ ]]; then
+    print_error "Resource prefix must start with a letter and contain only letters, numbers, or hyphens"
+    exit 1
+fi
 
 # Region
 print_info "Popular regions: eastus, westus2, centralus, westeurope"
