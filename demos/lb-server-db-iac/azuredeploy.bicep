@@ -422,12 +422,18 @@ resource vmssCustomScript 'Microsoft.Compute/virtualMachineScaleSets/extensions@
     typeHandlerVersion: '2.1'
     autoUpgradeMinorVersion: true
     forceUpdateTag: scriptsHash
+    // Gets the Blob Storage location from userData via Azure IMDS, then downloads and runs the setup script from there
     settings: {
-      fileUris: [
-        '${scriptsBaseUrl}/vm-setup.sh'
-      ]
-      // passes the blob URL as argument so the script can download app.py
-      commandToExecute: 'bash vm-setup.sh "${scriptsBaseUrl}"'
+      commandToExecute: '''bash -c '
+        # Fetch the blob storage URL from userData via Azure IMDS
+        IMDS_URL="http://169.254.169.254/metadata/instance/compute/userData?api-version=2021-01-01&format=text"
+        USER_DATA=$(curl -s -H "Metadata: true" "$IMDS_URL" | base64 -d)
+        BLOB_URL=$(echo "$USER_DATA" | python3 -c "import sys,json; print(json.load(sys.stdin)[\"blobStorageUrl\"])")
+
+        # Download and run the VM setup script
+        curl -fsSL "$BLOB_URL/vm-setup.sh" -o /tmp/vm-setup.sh
+        bash /tmp/vm-setup.sh "$BLOB_URL"
+      ''''
     }
   }
 }

@@ -45,3 +45,25 @@ az deployment group create \
   --parameters azuredeploy.bicepparam
 ```
 
+## VM bootstrapping and disaster recovery
+
+### How VMs are configured at boot
+
+The Bicep template creates a Storage Account containing three files uploaded as blobs:
+
+* **`vm-setup.sh`** — Bootstrap script that installs dependencies (Python, ODBC drivers), downloads `app.py` from blob storage, and creates a systemd service to run the Flask app.
+* **`app.py`** — The Flask application that reads/writes to Azure SQL.
+* **`sample-data.csv`** — Sample data loaded into the database by the app.
+
+Each VM and VMSS uses two mechanisms to reference this storage:
+
+1. **`userData`** — A base64-encoded JSON blob attached to the VM/VMSS resource containing the storage account URL, storage account name, SQL connection details, and credentials. At runtime, a startup wrapper script created inline by `vm-setup.sh` fetches this JSON from the [Azure Instance Metadata Service (IMDS)](https://learn.microsoft.com/en-us/azure/virtual-machines/instance-metadata-service) and exports the values as environment variables before launching the app.
+
+2. **CustomScript extension** — An Azure VM extension (`Microsoft.Azure.Extensions/CustomScript`) that runs during provisioning. It downloads `vm-setup.sh` from blob storage and executes it. The script then downloads `app.py` from the same storage account. The app runs using the correct configuration from the `userData`.
+
+### How Arpio handles disaster recovery
+
+During recovery, Arpio translates `userData` on the recovered VMSS instances, rewriting references to point to the recovered storage account and SQL server in the target region. This means the running application (via environment vars set from `userData` in IMDS) will automatically connect to the correct recovered resources.
+
+* For VMSS, CustomScript will run as each VM is provisioned, which pulls in the latest `userData` from IMDS as described above.
+* For standalone (static) VMs, `vm-setup.sh` has already setup `systemd` to run `start.sh` on every boot, and `start.sh` fetches `userData` from IMDS fresh each time.
