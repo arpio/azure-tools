@@ -1,0 +1,2 @@
+// TODO: Rewrite the truncation logic to truncate the resourcePrefix and keep the 'app2' suffix instead of chopping off the static suffix.
+    resourcePrefix = trunc(resourcePrefix, 10) // This is line 210\n
