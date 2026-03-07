@@ -4,6 +4,8 @@ Complete Bicep templates for deploying a production-ready hub-spoke network arch
 
 ## What Gets Deployed
 
+![architecture](images/hubandspoke_architecture.png)
+
 ### Hub VNet (Landing Zone)
 - **Azure Bastion** - Secure RDP/SSH access (only internet entry point for VMs)
 - **VPN Gateway** - On-premises connectivity (30-45 min deployment)
@@ -85,12 +87,12 @@ az deployment sub create \
   --template-file main.bicep \
   --parameters \
     resourcePrefix="mycompany" \
-    location="eastus" \
-    adminUsername="azureuser" \
-    adminPassword="YourSecurePassword123!" \
-    hubVnetAddressPrefix="10.0.0.0/16" \
-    app1VnetAddressPrefix="10.1.0.0/16" \
-    app2VnetAddressPrefix="10.2.0.0/16"
+    location='eastus' \
+    adminUsername='azureuser' \
+    adminPassword='YourSecurePassword123!' \
+    hubVnetAddressPrefix='10.0.0.0/16' \
+    app1VnetAddressPrefix='10.1.0.0/16' \
+    app2VnetAddressPrefix='10.2.0.0/16'
 ```
 
 ### Deploy with Optional PaaS Application
@@ -101,12 +103,12 @@ az deployment sub create \
   --location eastus \
   --template-file main.bicep \
   --parameters \
-    resourcePrefix="mycompany" \
-    location="eastus" \
-    adminUsername="azureuser" \
-    adminPassword="YourSecurePassword123!" \
+    resourcePrefix='mycompany' \
+    location='eastus' \
+    adminUsername='azureuser' \
+    adminPassword='YourSecurePassword123!' \
     deployPaasApplication=true \
-    paasSecretValue="MyPaasSecret123!"
+    paasSecretValue='MyPaasSecret123!'
 ```
 
 The PaaS application is **standalone** and **not connected** to the hub-spoke VNets. SQL Database uses the same admin credentials as the VMs.

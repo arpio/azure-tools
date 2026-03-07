@@ -132,7 +132,7 @@ resource sqlServer 'Microsoft.Sql/servers@2023-05-01-preview' = {
   name: '${resourcePrefix}-sql'
   location: location
   tags: {
-    'arpio-config:admin-password-secret': 'https://${keyVault.name}.vault.azure.net/secrets/DBPassword'
+    'arpio-config:admin-password-secret': 'https://${keyVault.name}${environment().suffixes.keyvaultDns}/secrets/DBPassword'
   } 
   properties: {
     administratorLogin: sqlAdminUsername
