@@ -107,6 +107,7 @@ module app1Vnet 'modules/app1-vnet.bicep' = {
     app1VnetAddressPrefix: app1VnetAddressPrefix
     bastionSubnetAddressPrefix: hubVnet.outputs.bastionSubnetAddressPrefix
     spokeRouteTableId: hubVnet.outputs.spokeRouteTableId
+    spokePublicRouteTableId: hubVnet.outputs.spokePublicRouteTableId
     adminUsername: adminUsername
     adminPassword: adminPassword
     vmssInstanceCount: vmssInstanceCount

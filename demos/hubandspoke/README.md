@@ -10,7 +10,7 @@ Complete Bicep templates for deploying a production-ready hub-spoke network arch
 - **Azure Bastion** - Secure RDP/SSH access (only internet entry point for VMs)
 - **VPN Gateway** - On-premises connectivity (30-45 min deployment)
 - **Network Security Groups** - Restricts all inbound traffic except to Bastion
-- **Route Table** - Routes spoke traffic through VPN Gateway
+- **Route Tables** - Private route table forces spoke traffic through VPN Gateway; public route table allows direct internet return paths for load-balanced subnets
 
 ### App 1 VNet (Multi-Tier Application)
 #### Key Vault
@@ -184,7 +184,9 @@ All other inbound traffic → BLOCKED
 
 ### Outbound Traffic
 ```
-Spoke VNets → Hub VNet → VPN Gateway → Internet/On-Premises
+App 1 WebSubnet → Internet (direct, for LB health probes and return traffic)
+App 1 DatabaseSubnet → Hub VNet → VPN Gateway → Internet/On-Premises
+App 2 → Hub VNet → VPN Gateway → Internet/On-Premises
 ```
 
 ### Inter-VNet Communication
@@ -201,7 +203,7 @@ App 1 ↔ App 2 (via Hub — no direct peering)
 - SSH/RDP blocked from internet — Bastion only
 - Database VM isolated to web subnet + Bastion only
 - Application Security Groups for fine-grained control
-- Route tables force spoke traffic through Hub VPN Gateway
+- Route tables force private subnet traffic through Hub VPN Gateway; WebSubnet uses an unrestricted route table for LB compatibility
 
 ### Identity & Access
 - System Assigned Identity for VMSS — granted Key Vault Secrets User role on the App 1 Key Vault

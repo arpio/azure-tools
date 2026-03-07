@@ -18,8 +18,11 @@ param app1VnetAddressPrefix string = '10.1.0.0/16'
 @description('Hub VNet Bastion subnet address prefix for NSG rules')
 param bastionSubnetAddressPrefix string
 
-@description('Route table ID from Hub VNet')
+@description('Route table ID from Hub VNet (forces internet traffic through VPN Gateway)')
 param spokeRouteTableId string
+
+@description('Public route table ID from Hub VNet (allows direct internet return paths for LB-fronted subnets)')
+param spokePublicRouteTableId string
 
 @description('Admin username for VMs')
 param adminUsername string
@@ -194,8 +197,10 @@ resource app1Vnet 'Microsoft.Network/virtualNetworks@2023-05-01' = {
           networkSecurityGroup: {
             id: subnet1Nsg.id
           }
+          // Uses public route table so LB health probes and client return traffic
+          // can reach the internet directly instead of being routed to the VPN Gateway.
           routeTable: {
-            id: spokeRouteTableId
+            id: spokePublicRouteTableId
           }
         }
       }

@@ -43,14 +43,14 @@ Split the single spoke route table into two:
 
 ### Files Changed
 
-**`script/modules/hub-vnet.bicep`**
+**`modules/hub-vnet.bicep`**
 - Added `spokePublicRouteTable` resource (empty route table for public-facing subnets)
 - Added `spokePublicRouteTableId` output
 
 **`main.bicep`**
 - Passes `spokePublicRouteTableId` from hub module to app1 module
 
-**`script/modules/app1-vnet.bicep`**
+**`modules/app1-vnet.bicep`**
 - Added `spokePublicRouteTableId` parameter
 - Changed WebSubnet to use `spokePublicRouteTableId` instead of `spokeRouteTableId`
 - DatabaseSubnet continues to use `spokeRouteTableId` (no change)
