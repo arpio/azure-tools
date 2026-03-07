@@ -9,7 +9,7 @@ The deployed workload looks like this:
 
 The workload includes the following resources:
 * Single standalone VM and multiple VMSS-based VMs
-* Azure SQL Database 
+* Azure SQL Database
 * Load Balancer targeting both standalone and VMSS VMs
 * All servers are running a simple Flask app that reads and writes to the DB
 * Bastions are deployed to access the VMs
@@ -22,7 +22,7 @@ The Bicep template does all necessary initialization, including uploading the sc
 
 ## Deployment
 
-Inspect the [`azuredeploy.bicepparam`](./azuredeploy.bicepparam) parameters file and make any changes. Specifically you may want to change 
+Inspect the [`azuredeploy.bicepparam`](./azuredeploy.bicepparam) parameters file and make any changes. Specifically you may want to change
 * `location`: The region the workload is deployed to
 * `vmSku`: Choose a VM SKU available in your chosen region
 * `sshPublicKey`: If you want to be able to use the Bastion to ssh to the VMs, replace this with a public key for which you have access to the private key
@@ -67,3 +67,51 @@ During recovery, Arpio translates `userData` on the recovered VMSS instances, re
 
 * For VMSS, CustomScript will run as each VM is provisioned, which pulls in the latest `userData` from IMDS as described above.
 * For standalone (static) VMs, `vm-setup.sh` has already setup `systemd` to run `start.sh` on every boot, and `start.sh` fetches `userData` from IMDS fresh each time.
+
+## Network Sandbox
+To use Network Sandbox with this workload, configure it as follows:
+
+**Allow outbound access to these domains:**
+```
+management.azure.com
+.vault.azure.net
+.blob.core.windows.net
+.database.windows.net
+api.ipify.org
+api.snapcraft.io
+.ubuntu.com
+.blob.storage.azure.net
+.microsoft.com
+.pypi.org
+.canonical.com
+.pythonhosted.org
+```
+
+**Allow outbound access to these CIDR blocks:**
+```
+20.0.0.0/8
+```
+
+### Notes on network sandbox configuration
+
+**The CIDR block** contains the Azure SQL Database gateway redirect endpoints — after the initial connection to the gateway on port 1433, clients using the Redirect connection policy are redirected to these database nodes.
+
+**Wildcards are used above** to simplify configuration. The specifics domains needed for the app to deploy are as follows:
+
+  apt-get:
+  - packages.microsoft.com — ODBC driver repo + GPG key
+  - archive.ubuntu.com — main Ubuntu packages
+  - security.ubuntu.com — Ubuntu security updates
+  - ports.ubuntu.com — Ubuntu ARM64 packages (if using ARM)
+
+  pip install:
+  - pypi.org — package index
+  - files.pythonhosted.org — package downloads
+
+  Ubuntu system services:
+  - api.snapcraft.io
+  - entropy.ubuntu.com
+  - esm.ubuntu.com
+  - contracts.canonical.com
+  - livepatch.canonical.com
+  - changelogs.ubuntu.com
