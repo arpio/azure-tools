@@ -190,9 +190,11 @@ resource vpnGateway 'Microsoft.Network/virtualNetworkGateways@2023-05-01' = {
 }
 
 // ============================================
-// Route Table for Spoke VNets
-// Routes all internet traffic to VPN Gateway
+// Route Tables for Spoke VNets
 // ============================================
+
+// Private route table: forces all internet traffic through VPN Gateway.
+// Use for backend subnets (e.g., DatabaseSubnet) that should not have direct internet access.
 resource spokeRouteTable 'Microsoft.Network/routeTables@2023-05-01' = {
   name: '${resourcePrefix}-spoke-rt'
   location: location
@@ -211,6 +213,20 @@ resource spokeRouteTable 'Microsoft.Network/routeTables@2023-05-01' = {
   }
 }
 
+// Public route table: no UDR overrides, uses default Azure routing.
+// Use for public-facing subnets (e.g., WebSubnet) behind a load balancer.
+// Without this, LB health probe responses and client return traffic get
+// black-holed through the VPN Gateway.
+resource spokePublicRouteTable 'Microsoft.Network/routeTables@2023-05-01' = {
+  name: '${resourcePrefix}-spoke-public-rt'
+  location: location
+  tags: tags
+  properties: {
+    disableBgpRoutePropagation: false
+    routes: []
+  }
+}
+
 // ============================================
 // Outputs
 // ============================================
@@ -226,3 +242,4 @@ output bastionPublicIp string = bastionPublicIp.properties.ipAddress
 output vpnGatewayId string = vpnGateway.id
 output vpnGatewayPublicIp string = vpnGatewayPublicIp.properties.ipAddress
 output spokeRouteTableId string = spokeRouteTable.id
+output spokePublicRouteTableId string = spokePublicRouteTable.id
