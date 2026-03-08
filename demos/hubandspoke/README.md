@@ -125,6 +125,8 @@ The PaaS application is **standalone** and **not connected** to the hub-spoke VN
 │   ├── app2-vnet.bicep            # App 2 VNet with Windows VM
 │   ├── vnet-peering.bicep         # VNet peering module
 │   └── paas-application.bicep     # Optional standalone PaaS stack
+├── recovery/
+│   └── vpn-gateway.bicep          # Pre-provision VPN Gateway in recovery environment
 └── README.md
 ```
 
@@ -258,6 +260,43 @@ az vmss scale \
 1. Copy `modules/app1-vnet.bicep` or `modules/app2-vnet.bicep`
 2. Modify for your needs
 3. Add module reference and peering in `main.bicep`
+
+## Preparing for DR Recovery
+
+When Arpio recovers this architecture to a new region or subscription, the spoke→hub VNet peerings will fail because they use `useRemoteGateways: true`, which requires a VPN Gateway in the hub VNet. Since the gateway takes 30-45 minutes to deploy, it should be **pre-provisioned in the recovery environment before any failover**.
+
+### Why
+
+Spoke→hub VNet peerings use `useRemoteGateways: true`, which requires a VPN Gateway in the hub VNet. The gateway takes 30-45 minutes to deploy and is not created by Arpio, so it must be added manually after Arpio recovers the hub VNet.
+
+### Steps
+
+1. **Onboard the workload to Arpio** — this creates the resource groups, VNets, and subnets in the recovery environment.
+  * Arpio creates these resources after it does its first backup. You do _not_ need to launch a recovery.
+  * The spoke VNet peerings will fail at this point (expected). The expected error looks like this:
+    ```
+    Peering ... cannot have UseRemoteGateway flag set to true because remote virtual network ... referenced by the peering does not have any gateways.
+    ```
+
+2. **Deploy the VPN Gateway** into the recovered hub VNet:
+
+    ```bash
+    az account set --subscription <recovery-subscription-id>
+
+    PREFIX="your-prefix"
+
+    az deployment group create \
+      --resource-group ${PREFIX}-hub-rg \
+      --template-file recovery/vpn-gateway.bicep \
+      --parameters resourcePrefix=${PREFIX} location=<recovery-region>
+    ```
+
+If you get the following error, it means Arpio has not yet created the recovery group and VNET in the recovery environment.
+``` 
+{"code": "ResourceGroupNotFound", "message": "Resource group 'xxxxxx' could not be found."}
+```
+
+3. **Re-run Arpio recovery** (or retry the failed peerings) — the spoke VNet peerings will now succeed because the gateway exists.
 
 ## Troubleshooting
 
