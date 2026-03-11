@@ -4,11 +4,13 @@ Complete Bicep templates for deploying a production-ready hub-spoke network arch
 
 ## What Gets Deployed
 
+![architecture](images/hubandspoke_architecture.png)
+
 ### Hub VNet (Landing Zone)
 - **Azure Bastion** - Secure RDP/SSH access (only internet entry point for VMs)
 - **VPN Gateway** - On-premises connectivity (30-45 min deployment)
 - **Network Security Groups** - Restricts all inbound traffic except to Bastion
-- **Route Table** - Routes spoke traffic through VPN Gateway
+- **Route Tables** - Private route table forces spoke traffic through VPN Gateway; public route table allows direct internet return paths for load-balanced subnets
 
 ### App 1 VNet (Multi-Tier Application)
 #### Key Vault
@@ -85,12 +87,12 @@ az deployment sub create \
   --template-file main.bicep \
   --parameters \
     resourcePrefix="mycompany" \
-    location="eastus" \
-    adminUsername="azureuser" \
-    adminPassword="YourSecurePassword123!" \
-    hubVnetAddressPrefix="10.0.0.0/16" \
-    app1VnetAddressPrefix="10.1.0.0/16" \
-    app2VnetAddressPrefix="10.2.0.0/16"
+    location='eastus' \
+    adminUsername='azureuser' \
+    adminPassword='YourSecurePassword123!' \
+    hubVnetAddressPrefix='10.0.0.0/16' \
+    app1VnetAddressPrefix='10.1.0.0/16' \
+    app2VnetAddressPrefix='10.2.0.0/16'
 ```
 
 ### Deploy with Optional PaaS Application
@@ -101,12 +103,12 @@ az deployment sub create \
   --location eastus \
   --template-file main.bicep \
   --parameters \
-    resourcePrefix="mycompany" \
-    location="eastus" \
-    adminUsername="azureuser" \
-    adminPassword="YourSecurePassword123!" \
+    resourcePrefix='mycompany' \
+    location='eastus' \
+    adminUsername='azureuser' \
+    adminPassword='YourSecurePassword123!' \
     deployPaasApplication=true \
-    paasSecretValue="MyPaasSecret123!"
+    paasSecretValue='MyPaasSecret123!'
 ```
 
 The PaaS application is **standalone** and **not connected** to the hub-spoke VNets. SQL Database uses the same admin credentials as the VMs.
@@ -123,6 +125,8 @@ The PaaS application is **standalone** and **not connected** to the hub-spoke VN
 │   ├── app2-vnet.bicep            # App 2 VNet with Windows VM
 │   ├── vnet-peering.bicep         # VNet peering module
 │   └── paas-application.bicep     # Optional standalone PaaS stack
+├── recovery/
+│   └── vpn-gateway.bicep          # Pre-provision VPN Gateway in recovery environment
 └── README.md
 ```
 
@@ -182,7 +186,9 @@ All other inbound traffic → BLOCKED
 
 ### Outbound Traffic
 ```
-Spoke VNets → Hub VNet → VPN Gateway → Internet/On-Premises
+App 1 WebSubnet → Internet (direct, for LB health probes and return traffic)
+App 1 DatabaseSubnet → Hub VNet → VPN Gateway → Internet/On-Premises
+App 2 → Hub VNet → VPN Gateway → Internet/On-Premises
 ```
 
 ### Inter-VNet Communication
@@ -199,7 +205,7 @@ App 1 ↔ App 2 (via Hub — no direct peering)
 - SSH/RDP blocked from internet — Bastion only
 - Database VM isolated to web subnet + Bastion only
 - Application Security Groups for fine-grained control
-- Route tables force spoke traffic through Hub VPN Gateway
+- Route tables force private subnet traffic through Hub VPN Gateway; WebSubnet uses an unrestricted route table for LB compatibility
 
 ### Identity & Access
 - System Assigned Identity for VMSS — granted Key Vault Secrets User role on the App 1 Key Vault
@@ -254,6 +260,43 @@ az vmss scale \
 1. Copy `modules/app1-vnet.bicep` or `modules/app2-vnet.bicep`
 2. Modify for your needs
 3. Add module reference and peering in `main.bicep`
+
+## Preparing for DR Recovery
+
+When Arpio recovers this architecture to a new region or subscription, the spoke→hub VNet peerings will fail because they use `useRemoteGateways: true`, which requires a VPN Gateway in the hub VNet. Since the gateway takes 30-45 minutes to deploy, it should be **pre-provisioned in the recovery environment before any failover**.
+
+### Why
+
+Spoke→hub VNet peerings use `useRemoteGateways: true`, which requires a VPN Gateway in the hub VNet. The gateway takes 30-45 minutes to deploy and is not created by Arpio, so it must be added manually after Arpio recovers the hub VNet.
+
+### Steps
+
+1. **Onboard the workload to Arpio** — this creates the resource groups, VNets, and subnets in the recovery environment.
+  * Arpio creates these resources after it does its first backup. You do _not_ need to launch a recovery.
+  * The spoke VNet peerings will fail at this point (expected). The expected error looks like this:
+    ```
+    Peering ... cannot have UseRemoteGateway flag set to true because remote virtual network ... referenced by the peering does not have any gateways.
+    ```
+
+2. **Deploy the VPN Gateway** into the recovered hub VNet:
+
+    ```bash
+    az account set --subscription <recovery-subscription-id>
+
+    PREFIX="your-prefix"
+
+    az deployment group create \
+      --resource-group ${PREFIX}-hub-rg \
+      --template-file recovery/vpn-gateway.bicep \
+      --parameters resourcePrefix=${PREFIX} location=<recovery-region>
+    ```
+
+If you get the following error, it means Arpio has not yet created the recovery group and VNET in the recovery environment.
+``` 
+{"code": "ResourceGroupNotFound", "message": "Resource group 'xxxxxx' could not be found."}
+```
+
+3. **Re-run Arpio recovery** (or retry the failed peerings) — the spoke VNet peerings will now succeed because the gateway exists.
 
 ## Troubleshooting
 
