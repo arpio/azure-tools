@@ -1,0 +1,74 @@
+#cloud-config
+# =============================================================================
+# Minimal VM Bootstrap - Infrastructure Only
+# Application code is deployed separately via deploy-app.sh
+# =============================================================================
+
+package_update: true
+package_upgrade: true
+
+packages:
+  - apache2
+  - php
+  - php-xml
+  - php-curl
+  - php-mbstring
+  - unixodbc
+  - unixodbc-dev
+  - curl
+  - apt-transport-https
+  - jq
+
+runcmd:
+  # --- Install Microsoft ODBC Driver for SQL Server ---
+  - curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /usr/share/keyrings/microsoft-prod.gpg
+  - echo "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/ubuntu/22.04/prod jammy main" > /etc/apt/sources.list.d/mssql-release.list
+  - apt-get update
+  - ACCEPT_EULA=Y apt-get install -y msodbcsql18 mssql-tools18
+  - apt-get install -y php-dev php-pear
+  - pecl install sqlsrv pdo_sqlsrv
+  - printf "extension=sqlsrv.so\n" > /etc/php/8.1/mods-available/sqlsrv.ini
+  - printf "extension=pdo_sqlsrv.so\n" > /etc/php/8.1/mods-available/pdo_sqlsrv.ini
+  - phpenmod sqlsrv pdo_sqlsrv
+
+  # --- Install Azure CLI ---
+  - curl -sL https://aka.ms/InstallAzureCLIDeb | bash
+
+  # --- Create directory for application configs ---
+  - mkdir -p /etc/arpio-lamp
+  - chmod 755 /etc/arpio-lamp
+
+  # --- Wait for managed identity to be ready ---
+  - sleep 30
+
+  # --- Retrieve database credentials from Key Vault using managed identity ---
+  - |
+    # Get access token for Key Vault using managed identity
+    TOKEN=$(curl -s 'http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https%3A%2F%2Fvault.azure.net' -H Metadata:true | jq -r '.access_token')
+
+    # Get Key Vault name from userData
+    USERDATA_B64=$(curl -s 'http://169.254.169.254/metadata/instance/compute/userData?api-version=2021-01-01&format=text' -H Metadata:true)
+    USERDATA_JSON=$(echo "$USERDATA_B64" | base64 -d)
+    KV_NAME=$(echo "$USERDATA_JSON" | jq -r '.keyVaultName')
+    SQL_SERVER=$(echo "$USERDATA_JSON" | jq -r '.sqlServerFqdn')
+    SQL_DB=$(echo "$USERDATA_JSON" | jq -r '.sqlDatabaseName')
+
+    # Retrieve secrets from Key Vault
+    SQL_USER=$(curl -s "https://${KV_NAME}.vault.azure.net/secrets/sql-admin-username?api-version=7.4" -H "Authorization: Bearer $TOKEN" | jq -r '.value')
+    SQL_PASS=$(curl -s "https://${KV_NAME}.vault.azure.net/secrets/sql-admin-password?api-version=7.4" -H "Authorization: Bearer $TOKEN" | jq -r '.value')
+    KV_URL=$(curl -s "https://${KV_NAME}.vault.azure.net/secrets/storage-blob-url?api-version=7.4" -H "Authorization: Bearer $TOKEN" | jq -r '.value')
+
+    # Write config files
+    echo "$SQL_USER" > /etc/arpio-lamp/db-user.txt
+    echo "$SQL_PASS" > /etc/arpio-lamp/db-pass.txt
+    echo "$SQL_SERVER" > /etc/arpio-lamp/db-server.txt
+    echo "$SQL_DB" > /etc/arpio-lamp/db-name.txt
+    echo "$KV_NAME" > /etc/arpio-lamp/keyvault-name.txt
+    echo "$KV_URL" > /etc/arpio-lamp/storage-url.txt
+
+    # Set permissions
+    chmod 644 /etc/arpio-lamp/*.txt
+
+  # --- Enable and start Apache ---
+  - systemctl enable apache2
+  - systemctl restart apache2
