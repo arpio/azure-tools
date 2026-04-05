@@ -67,7 +67,7 @@ var vmName = '${resourcePrefix}-vm'
 var sqlServerName = '${toLower(resourcePrefix)}-sql-${uniqueSuffix}'             // Must be globally unique
 var sqlDbName = 'lampdb'
 var sqlPrivateEndpointName = '${resourcePrefix}-sql-pe'
-var privateDnsZoneName = 'privatelink.database.windows.net'
+var privateDnsZoneName = 'privatelink${environment().suffixes.sqlServerHostname}'
 var keyVaultName = '${toLower(resourcePrefix)}-kv-${uniqueSuffix}'                    // Must be globally unique, max 24 chars
 var storageAccountName = '${toLower(replace(resourcePrefix, '-', ''))}${uniqueSuffix}'              // Must be globally unique, lowercase, no hyphens, max 24 chars
 var blobContainerName = 'assets'                                 // ≈ S3 bucket (scoped within storage account)
@@ -513,7 +513,7 @@ resource sqlServer 'Microsoft.Sql/servers@2023-08-01-preview' = {
   location: location
   tags: {
     ArpioBackup: 'True'
-    'arpio-config:admin-password-secret': 'https://${keyVaultName}.vault.azure.net/secrets/sql-admin-password'
+    'arpio-config:admin-password-secret': '${keyVault.properties.vaultUri}secrets/sql-admin-password'
   }
   properties: {
     administratorLogin: sqlAdminUsername
@@ -730,10 +730,6 @@ resource appGateway 'Microsoft.Network/applicationGateways@2023-11-01' = {
       }
     ]
   }
-  dependsOn: [
-    vnet
-    nic
-  ]
 }
 
 // =============================================================================
