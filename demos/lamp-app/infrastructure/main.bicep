@@ -513,7 +513,7 @@ resource sqlServer 'Microsoft.Sql/servers@2023-08-01-preview' = {
   location: location
   tags: {
     ArpioBackup: 'True'
-    'arpio-config:admin-password-secret': '${keyVault.properties.vaultUri}secrets/sql-admin-password'
+    'arpio-config:admin-password-secret': 'https://${keyVault.name}${environment().suffixes.keyvaultDns}/secrets/sql-admin-password'
   }
   properties: {
     administratorLogin: sqlAdminUsername
