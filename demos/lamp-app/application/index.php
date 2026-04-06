@@ -338,17 +338,9 @@ $envBadgeBg = $isPrimary ? 'rgba(40,167,69,0.9)' : 'rgba(231,76,60,0.9)';
             <div class="card-header">&#128268; Application Gateway — Layer 7 Load Balancer <span class="aws">≈ Application Load Balancer (ALB)</span></div>
             <div class="card-body">
                 <?php
-                // Read from config file
-                if (file_exists("/etc/arpio-lamp/lb-config.json")) {
-                    $lbConfigData = json_decode(file_get_contents("/etc/arpio-lamp/lb-config.json"), true) ?: [];
-                    $agwId = $lbConfigData["appGatewayId"] ?? "N/A";
-                    $agwName = $lbConfigData["appGatewayName"] ?? "N/A";
-                    $agwIp = $lbConfigData["appGatewayPublicIp"] ?? "N/A";
-                } else {
-                    $agwId = "N/A";
-                    $agwName = $netPrefix . "-appgw";
-                    $agwIp = "N/A";
-                }
+                $agwId = $userData["appGatewayId"] ?? "N/A";
+                $agwName = $userData["appGatewayName"] ?? "N/A";
+                $agwIp = $userData["appGatewayPublicIp"] ?? "N/A";
                 ?>
                 <div class="info-row"><span class="info-label">Status</span><span class="info-value ok">&#10004; Deployed</span></div>
                 <div class="info-row"><span class="info-label">Resource ID</span><span class="info-value mono" style="font-size:0.75rem"><?=htmlspecialchars($agwId)?></span></div>
@@ -367,17 +359,9 @@ $envBadgeBg = $isPrimary ? 'rgba(40,167,69,0.9)' : 'rgba(231,76,60,0.9)';
             <div class="card-header">&#9878; Load Balancer — Layer 4 Load Balancer <span class="aws">≈ Network Load Balancer (NLB)</span></div>
             <div class="card-body">
                 <?php
-                // Read from config file
-                if (file_exists("/etc/arpio-lamp/lb-config.json")) {
-                    $lbConfigData = json_decode(file_get_contents("/etc/arpio-lamp/lb-config.json"), true) ?: [];
-                    $lbId = $lbConfigData["loadBalancerId"] ?? "N/A";
-                    $lbName = $lbConfigData["loadBalancerName"] ?? "N/A";
-                    $lbIp = $lbConfigData["loadBalancerPublicIp"] ?? "N/A";
-                } else {
-                    $lbId = "N/A";
-                    $lbName = $netPrefix . "-lb";
-                    $lbIp = "N/A";
-                }
+                $lbId = $userData["loadBalancerId"] ?? "N/A";
+                $lbName = $userData["loadBalancerName"] ?? "N/A";
+                $lbIp = $userData["loadBalancerPublicIp"] ?? "N/A";
                 ?>
                 <div class="info-row"><span class="info-label">Status</span><span class="info-value ok">&#10004; Deployed</span></div>
                 <div class="info-row"><span class="info-label">Resource ID</span><span class="info-value mono" style="font-size:0.75rem"><?=htmlspecialchars($lbId)?></span></div>

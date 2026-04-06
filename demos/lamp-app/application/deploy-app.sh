@@ -61,67 +61,14 @@ echo -e "${GREEN}✓ VM IP: $VM_IP${NC}"
 echo ""
 
 # =============================================================================
-# Step 2: Get Load Balancer Resource IDs (for application config)
+# Step 2: Deploy application files
 # =============================================================================
-echo -e "${YELLOW}Step 2: Getting load balancer resource IDs...${NC}"
-
-APPGW_ID=$(az network application-gateway show \
-  --resource-group "$RESOURCE_GROUP" \
-  --name "${RESOURCE_PREFIX}-appgw" \
-  --query "id" -o tsv 2>/dev/null || echo "N/A")
-
-LB_ID=$(az network lb show \
-  --resource-group "$RESOURCE_GROUP" \
-  --name "${RESOURCE_PREFIX}-lb" \
-  --query "id" -o tsv 2>/dev/null || echo "N/A")
-
-APPGW_IP=$(az network public-ip show \
-  --resource-group "$RESOURCE_GROUP" \
-  --name "${RESOURCE_PREFIX}-appgw-pip" \
-  --query "ipAddress" -o tsv 2>/dev/null || echo "N/A")
-
-LB_IP=$(az network public-ip show \
-  --resource-group "$RESOURCE_GROUP" \
-  --name "${RESOURCE_PREFIX}-lb-pip" \
-  --query "ipAddress" -o tsv 2>/dev/null || echo "N/A")
-
-echo -e "${GREEN}✓ App Gateway: $APPGW_IP${NC}"
-echo -e "${GREEN}✓ Load Balancer: $LB_IP${NC}"
-echo ""
-
-# =============================================================================
-# Step 3: Create load balancer config file
-# =============================================================================
-echo -e "${YELLOW}Step 3: Creating application config...${NC}"
-
-cat > /tmp/lb-config.json <<EOF
-{
-  "appGatewayId": "$APPGW_ID",
-  "appGatewayName": "${RESOURCE_PREFIX}-appgw",
-  "appGatewayPublicIp": "$APPGW_IP",
-  "loadBalancerId": "$LB_ID",
-  "loadBalancerName": "${RESOURCE_PREFIX}-lb",
-  "loadBalancerPublicIp": "$LB_IP"
-}
-EOF
-
-echo -e "${GREEN}✓ Config file created${NC}"
-echo ""
-
-# =============================================================================
-# Step 4: Deploy application files
-# =============================================================================
-echo -e "${YELLOW}Step 4: Deploying application files to VM...${NC}"
+echo -e "${YELLOW}Step 2: Deploying application files to VM...${NC}"
 
 # Copy PHP application
 echo "  - Copying index.php..."
 scp -i "$SSH_KEY" -o StrictHostKeyChecking=no \
   index.php azureuser@$VM_IP:/tmp/index.php
-
-# Copy config
-echo "  - Copying config..."
-scp -i "$SSH_KEY" -o StrictHostKeyChecking=no \
-  /tmp/lb-config.json azureuser@$VM_IP:/tmp/lb-config.json
 
 # Install on VM
 echo "  - Installing on VM..."
@@ -134,10 +81,6 @@ ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no azureuser@$VM_IP <<'ENDSSH'
   sudo chmod 644 /var/www/html/index.php
   sudo chown www-data:www-data /var/www/html/index.php
 
-  # Move config
-  sudo mv /tmp/lb-config.json /etc/arpio-lamp/lb-config.json
-  sudo chmod 644 /etc/arpio-lamp/lb-config.json
-
   # Restart Apache
   sudo systemctl restart apache2
 
@@ -148,7 +91,7 @@ echo -e "${GREEN}✓ Application deployed${NC}"
 echo ""
 
 # =============================================================================
-# Step 5: Display results
+# Step 3: Display results
 # =============================================================================
 echo ""
 echo -e "${GREEN}================================================${NC}"
@@ -157,8 +100,6 @@ echo -e "${GREEN}================================================${NC}"
 echo ""
 echo -e "${BLUE}🌐 Access your application:${NC}"
 echo "  Direct VM:         http://$VM_IP"
-[ "$APPGW_IP" != "N/A" ] && echo "  App Gateway:       http://$APPGW_IP"
-[ "$LB_IP" != "N/A" ] && echo "  Load Balancer:     http://$LB_IP"
 echo ""
 echo -e "${BLUE}💡 Tips:${NC}"
 echo "  - To update the application, edit index.php and run this script again"
