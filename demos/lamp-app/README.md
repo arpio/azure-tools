@@ -1,4 +1,4 @@
-# Arpio Bug Bash - Azure LAMP Stack with Network Sandbox Testing
+# Arpio LAMP Stack Demo - Azure LAMP Stack with Network Sandbox Testing
 
 This repository contains a complete Azure LAMP stack deployment designed for testing Arpio's Network Sandbox feature with both Application Gateway (Layer 7) and Load Balancer (Layer 4) ingress patterns.
 
@@ -220,4 +220,4 @@ For issues with:
 
 ---
 
-**Happy Bug Bashing! 🐛🔨**
+**Happy testing! 🚀**

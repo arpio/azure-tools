@@ -1,6 +1,6 @@
 <?php
 // ==========================================================
-// Arpio Bug Bash — LAMP Stack Hello World (v3)
+// Arpio LAMP Stack Demo — Hello World (v3)
 //
 // NOW WITH: userData reading from IMDS!
 // Key Vault + Storage Account + Blob-hosted Arpio logo!
@@ -148,7 +148,7 @@ $envBadgeBg = $isPrimary ? 'rgba(40,167,69,0.9)' : 'rgba(231,76,60,0.9)';
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Arpio Bug Bash — <?= $envLabel ?> — <?= strtoupper($region) ?></title>
+    <title>Arpio LAMP Stack Demo — <?= $envLabel ?> — <?= strtoupper($region) ?></title>
     <style>
         *{margin:0;padding:0;box-sizing:border-box}
         body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f0f2f5;color:#333}
@@ -178,7 +178,7 @@ $envBadgeBg = $isPrimary ? 'rgba(40,167,69,0.9)' : 'rgba(231,76,60,0.9)';
 <body>
     <div class="header">
         <?php if($logoUrl):?><img src="<?=htmlspecialchars($logoUrl)?>" alt="Arpio" class="header-logo" onerror="this.style.display='none'"><?php endif;?>
-        <h1>Bug Bash — LAMP Stack on Azure</h1>
+        <h1>LAMP Stack Demo on Azure</h1>
         <p>Hello World! This page dynamically detects its environment.</p>
         <div class="region-badge">&#128205; <?=strtoupper($region)?></div><br>
         <div class="env-badge"><?=$envLabel?> ENVIRONMENT</div>
@@ -405,7 +405,7 @@ $envBadgeBg = $isPrimary ? 'rgba(40,167,69,0.9)' : 'rgba(231,76,60,0.9)';
     </div>
 
     <div class="footer">
-        Arpio Bug Bash &bull; LAMP Stack on Azure &bull; <?=$envLabel?> in <strong><?=strtoupper($region)?></strong><br>
+        Arpio &bull; LAMP Stack Demo on Azure &bull; <?=$envLabel?> in <strong><?=strtoupper($region)?></strong><br>
         After Arpio recovery → <strong>eastus2</strong>, different Subscription ID, new resource endpoints.<br>
         <small>The logo above is served from Azure Blob Storage (≈ S3) — it should also recover!</small>
     </div>

@@ -1,5 +1,5 @@
 // =============================================================================
-// Azure LAMP Stack for Arpio Bug Bash (v2)
+// Azure LAMP Stack for Arpio (v2)
 // Deploys: VNet + Subnet + NSG + Public IP + NIC + Linux VM (Apache/PHP)
 //          + Azure SQL + Key Vault + Storage Account + Blob Container
 //
@@ -336,7 +336,7 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
     enabledForTemplateDeployment: true
     enableRbacAuthorization: true                 // Use Azure RBAC (≈ IAM policies)
     networkAcls: {
-      defaultAction: 'Allow'                      // For bug bash simplicity
+      defaultAction: 'Allow'                      // For demo simplicity
       bypass: 'AzureServices'
     }
   }

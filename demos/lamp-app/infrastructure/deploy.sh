@@ -14,7 +14,7 @@ RED='\033[0;31m'
 NC='\033[0m'
 
 echo -e "${BLUE}============================================${NC}"
-echo -e "${BLUE}  Arpio Bug Bash — Infrastructure Deployment${NC}"
+echo -e "${BLUE}  Arpio LAMP Stack Demo — Infrastructure Deployment${NC}"
 echo -e "${BLUE}============================================${NC}"
 echo ""
 
@@ -109,8 +109,10 @@ echo -e "${GREEN}✓ Infrastructure deployment complete${NC}"
 echo ""
 
 # =============================================================================
-# Step 6: Parse and display outputs
+# Step 6: Parse outputs
 # =============================================================================
+echo -e "${YELLOW}Step 6: Parsing deployment outputs...${NC}"
+
 function get_output() {
     jq -r ".$1.value // \"N/A\"" deployment-outputs.json
 }
@@ -123,15 +125,21 @@ SQL_SERVER=$(get_output sqlServerFqdn)
 KV_NAME=$(get_output keyVaultName)
 STORAGE_NAME=$(get_output storageAccountName)
 
+echo -e "${GREEN}✓ Outputs parsed${NC}"
+echo ""
+
 # =============================================================================
-# Step 6.5: Upload Arpio logo to blob storage
+# Step 7: Upload Arpio logo to blob storage
 # =============================================================================
-echo -e "${YELLOW}Step 6.5: Uploading assets to blob storage...${NC}"
+echo -e "${YELLOW}Step 7: Uploading assets to blob storage...${NC}"
+
+curl -sL -o /tmp/arpio-logo.svg "https://arpio.io/wp-content/uploads/2022/09/arpio-logo.svg"
+
 az storage blob upload \
   --account-name "$STORAGE_NAME" \
   --container-name assets \
   --name arpio-logo.svg \
-  --file ../assets/arpio-logo.svg \
+  --file /tmp/arpio-logo.svg \
   --auth-mode login \
   --overwrite \
   --output none
@@ -144,7 +152,7 @@ fi
 echo ""
 
 # =============================================================================
-# Step 7: Display summary
+# Step 8: Display summary
 # =============================================================================
 echo ""
 echo -e "${GREEN}================================================${NC}"

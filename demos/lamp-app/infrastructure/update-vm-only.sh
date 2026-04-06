@@ -1,5 +1,10 @@
 #!/bin/bash
-# Update only the VM resource with new cloud-init configuration
+# =============================================================================
+# Dev convenience script: update VM config without redeploying all infrastructure.
+# Useful for iterating on the PHP app or cloud-init changes. For full
+# infrastructure deploys, use deploy.sh instead. Bicep already handles VM
+# configuration declaratively; this script is a shortcut for development only.
+# =============================================================================
 set -e
 
 RESOURCE_GROUP="${RESOURCE_GROUP:-LampApp-rg}"

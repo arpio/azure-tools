@@ -3,6 +3,10 @@
 # 🚀 Deploy LAMP Application to Azure VM
 # Run this AFTER infrastructure is deployed
 # This can be run multiple times to update the application
+#
+# NOTE: This script is optional and intended for single-VM deployments only.
+# For VMSS-compatible deployments, see Seth's lb-server-db-iac demo which
+# uses a Bicep-native approach for application deployment.
 # =============================================================================
 
 set -e

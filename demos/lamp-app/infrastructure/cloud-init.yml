@@ -26,7 +26,7 @@ runcmd:
   - apt-get update
   - ACCEPT_EULA=Y apt-get install -y msodbcsql18 mssql-tools18
   - apt-get install -y php-dev php-pear
-  - pecl install sqlsrv pdo_sqlsrv
+  - pecl install sqlsrv-5.12.0 pdo_sqlsrv-5.12.0
   - printf "extension=sqlsrv.so\n" > /etc/php/8.1/mods-available/sqlsrv.ini
   - printf "extension=pdo_sqlsrv.so\n" > /etc/php/8.1/mods-available/pdo_sqlsrv.ini
   - phpenmod sqlsrv pdo_sqlsrv
