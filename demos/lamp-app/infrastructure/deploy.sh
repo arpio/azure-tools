@@ -132,14 +132,11 @@ echo ""
 # Step 7: Upload Arpio logo to blob storage
 # =============================================================================
 echo -e "${YELLOW}Step 7: Uploading assets to blob storage...${NC}"
-
-curl -sL -o /tmp/arpio-logo.svg "https://arpio.io/wp-content/uploads/2022/09/arpio-logo.svg"
-
 az storage blob upload \
   --account-name "$STORAGE_NAME" \
   --container-name assets \
   --name arpio-logo.svg \
-  --file /tmp/arpio-logo.svg \
+  --file ../assets/arpio-logo.svg \
   --auth-mode login \
   --overwrite \
   --output none

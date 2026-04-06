@@ -5,8 +5,9 @@
 # This can be run multiple times to update the application
 #
 # NOTE: This script is optional and intended for single-VM deployments only.
-# For VMSS-compatible deployments, see Seth's lb-server-db-iac demo which
-# uses a Bicep-native approach for application deployment.
+# For VMSS-compatible deployments, see the lb-server-db-iac demo
+# (../../lb-server-db-iac/) which uses a Bicep-native approach for
+# application deployment.
 # =============================================================================
 
 set -e
