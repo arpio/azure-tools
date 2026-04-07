@@ -68,7 +68,7 @@ var sqlServerName = '${toLower(resourcePrefix)}-sql-${uniqueSuffix}'            
 var sqlDbName = 'lampdb'
 var sqlPrivateEndpointName = '${resourcePrefix}-sql-pe'
 var privateDnsZoneName = 'privatelink${environment().suffixes.sqlServerHostname}'
-var keyVaultName = '${toLower(resourcePrefix)}-kv-${uniqueSuffix}'                    // Must be globally unique, max 24 chars
+var keyVaultName = take('${toLower(resourcePrefix)}-kv-${uniqueSuffix}', 24)          // Must be globally unique, max 24 chars
 var storageAccountName = '${toLower(replace(resourcePrefix, '-', ''))}${uniqueSuffix}'              // Must be globally unique, lowercase, no hyphens, max 24 chars
 var blobContainerName = 'assets'                                 // ≈ S3 bucket (scoped within storage account)
 
@@ -508,7 +508,7 @@ resource rgReaderRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04
 //   2. SQL Database (actual DB) = where data lives
 // In AWS, RDS combines both into one "DB Instance".
 // =============================================================================
-resource sqlServer 'Microsoft.Sql/servers@2023-08-01-preview' = {
+resource sqlServer 'Microsoft.Sql/servers@2023-08-01' = {
   name: sqlServerName
   location: location
   tags: {

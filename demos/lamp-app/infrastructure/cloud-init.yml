@@ -67,7 +67,7 @@ runcmd:
     echo "$KV_URL" > /etc/arpio-lamp/storage-url.txt
 
     # Set permissions
-    chmod 644 /etc/arpio-lamp/*.txt
+    chmod 640 /etc/arpio-lamp/*.txt
 
   # --- Enable and start Apache ---
   - systemctl enable apache2
