@@ -66,7 +66,8 @@ runcmd:
     echo "$KV_NAME" > /etc/arpio-lamp/keyvault-name.txt
     echo "$KV_URL" > /etc/arpio-lamp/storage-url.txt
 
-    # Set permissions
+    # Set permissions (www-data must be able to read for PHP)
+    chown root:www-data /etc/arpio-lamp/*.txt
     chmod 640 /etc/arpio-lamp/*.txt
 
   # --- Enable and start Apache ---
