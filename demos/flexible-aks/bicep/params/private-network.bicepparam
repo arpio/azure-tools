@@ -23,3 +23,7 @@ param nodeCount             = 2
 // param subnetId
 // param entraAdminGroupId
 // param userAssignedIdentityId
+// param kvName
+// param deployingUserPrincipalId
+// param clusterIdentityPrincipalId  (UserAssigned only)
+// param vnetId

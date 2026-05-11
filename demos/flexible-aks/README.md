@@ -37,12 +37,28 @@ openssl version
 
 ## Usage
 
+### Interactive (no flags required)
+
 ```bash
 chmod +x deploy-cluster.sh
 ./deploy-cluster.sh
 ```
 
-The script is fully interactive — no flags required. Follow the prompts in order.
+The script walks through all configuration choices interactively.
+
+### With a parameter file
+
+Pre-populate any or all parameters to skip the corresponding prompts:
+
+```bash
+cp deploy-cluster.params.example my-cluster.params
+# Edit my-cluster.params, then:
+./deploy-cluster.sh --params my-cluster.params
+```
+
+Any parameter left commented out (or omitted) in the file will still be prompted interactively. Partial files are valid — you can pre-set just the values you always know (e.g. `SUBSCRIPTION_ID`, `LOCATION`, `PREFIX`) and let the rest prompt.
+
+`*.params` files are git-ignored by default to prevent accidental commits of environment-specific settings. See `deploy-cluster.params.example` for the full list of available parameters with descriptions and allowed values.
 
 ### Prompt flow
 
@@ -180,7 +196,8 @@ User-assigned identities persist independently of the cluster and can be reused 
 ```
 flexible-aks/
 ├── README.md
-├── deploy-cluster.sh         # Interactive deployment script
+├── deploy-cluster.sh                  # Deployment script (interactive or --params)
+├── deploy-cluster.params.example      # Parameter file template
 └── bicep/
     ├── main.bicep            # Orchestrator template
     ├── modules/

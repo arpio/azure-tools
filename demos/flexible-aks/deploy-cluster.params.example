@@ -1,0 +1,61 @@
+# =============================================================================
+# deploy-cluster.sh parameter file — example
+# =============================================================================
+# Copy this file and fill in the values for your environment:
+#
+#   cp deploy-cluster.params.example my-cluster.params
+#   ./deploy-cluster.sh --params my-cluster.params
+#
+# Any parameter left commented out will be prompted interactively.
+# Partial files are valid — mix pre-set and interactive freely.
+#
+# NOTE: *.params files are git-ignored by default to prevent accidental
+# commits of environment-specific settings. Do not remove the .gitignore
+# pattern if you want to keep this protection.
+# =============================================================================
+
+# Azure subscription ID to deploy into.
+# Leave commented to choose from a list at runtime.
+#SUBSCRIPTION_ID="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+
+# Azure region (e.g. eastus, westeurope, australiaeast).
+#LOCATION="eastus"
+
+# Network configuration.
+# Allowed: managed-network | custom-network | private-network
+#   managed-network  — Azure-managed VNet, API server VNet integration, public delegate
+#   custom-network   — script-created VNet, public API endpoint, public delegate
+#   private-network  — script-created VNet, private API endpoint, private delegate required
+#NETWORK_CONFIG="custom-network"
+
+# Networking model (ignored for managed-network, which always uses Azure CNI Overlay).
+# Allowed: azure-cni-overlay | kubenet
+#NETWORK_MODEL="azure-cni-overlay"
+
+# Network policy engine (only applies to Azure CNI Overlay).
+# Allowed: azure | cilium
+#NETWORK_POLICY="azure"
+
+# Kubernetes authentication mode.
+# Allowed: entra | classic
+#   entra   — Azure Entra ID + Azure RBAC; local admin accounts disabled
+#   classic — local cluster admin certificate and kubeconfig; no Entra dependency
+#K8S_AUTH="entra"
+
+# Create an Entra admin group and add the current user to it.
+# Only used when K8S_AUTH=entra. Allowed: true | false
+#ENTRA_ADMIN_ENABLED="true"
+
+# Managed identity type for the AKS cluster.
+# Allowed: system-assigned | user-assigned
+#IDENTITY_TYPE="system-assigned"
+
+# Resource name prefix (2+ chars, lowercase alphanumeric and hyphens, no leading/trailing hyphens).
+# Examples: ar, arpio, myteam-aks
+#PREFIX="arpio"
+
+# Node pool VM SKU.
+#VM_SKU="Standard_D2s_v3"
+
+# Number of nodes in the system node pool (positive integer).
+#NODE_COUNT="2"

@@ -8,7 +8,30 @@ set -euo pipefail
 #   managed-network  - Azure-managed VNet, API server VNet integration, public delegate
 #   custom-network   - BYO VNet, public API, public delegate
 #   private-network  - BYO VNet, private API, private delegate
+#
+# Usage:
+#   ./deploy-cluster.sh                        # fully interactive
+#   ./deploy-cluster.sh --params <params-file> # pre-populate from file
 # =============================================================================
+
+# -----------------------------------------------------------------------------
+# Argument parsing
+# -----------------------------------------------------------------------------
+
+PARAMS_FILE=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --params)
+      [[ $# -ge 2 ]] || { echo "Error: --params requires a file argument" >&2; exit 1; }
+      PARAMS_FILE="$2"
+      shift 2
+      ;;
+    *)
+      echo "Usage: $(basename "${BASH_SOURCE[0]}") [--params <params-file>]" >&2
+      exit 1
+      ;;
+  esac
+done
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BICEP_DIR="${SCRIPT_DIR}/bicep"
@@ -29,6 +52,7 @@ success() { echo -e "${GREEN}${BOLD}✓${RESET} $*"; }
 warn()    { echo -e "${YELLOW}${BOLD}!${RESET} $*"; }
 error()   { echo -e "${RED}${BOLD}✗${RESET} $*" >&2; }
 header()  { echo -e "\n${BOLD}$*${RESET}"; echo -e "${BOLD}$(printf '%.0s─' {1..60})${RESET}"; }
+from_params() { echo -e "${CYAN}${BOLD}→${RESET} ${BOLD}${1}:${RESET} ${2} ${YELLOW}(params)${RESET}"; }
 
 prompt() {
   # prompt <var_name> <display_text> [default]
@@ -78,10 +102,17 @@ pick_from_list() {
 }
 
 confirm() {
-  # confirm <message> — returns 0 for yes, 1 for no
+  # confirm <message> — default no, returns 0 for yes, 1 for no
   local answer
   read -rp "$(echo -e "${BOLD}$1 [y/N]${RESET}: ")" answer
   [[ "$answer" =~ ^[Yy]$ ]]
+}
+
+confirm_yes() {
+  # confirm_yes <message> — default yes, returns 0 for yes, 1 for no
+  local answer
+  read -rp "$(echo -e "${BOLD}$1 [Y/n]${RESET}: ")" answer
+  [[ -z "$answer" || "$answer" =~ ^[Yy]$ ]]
 }
 
 derive_suffix() {
@@ -89,6 +120,70 @@ derive_suffix() {
   local raw="${1}${2}${3}"
   echo -n "$raw" | openssl dgst -sha256 | awk '{print $2}' | cut -c1-6
 }
+
+# -----------------------------------------------------------------------------
+# Params file — load and validate
+# -----------------------------------------------------------------------------
+
+if [[ -n "$PARAMS_FILE" ]]; then
+  if [[ ! -f "$PARAMS_FILE" ]]; then
+    error "Params file not found: ${PARAMS_FILE}"
+    exit 1
+  fi
+  # shellcheck source=/dev/null
+  source "$PARAMS_FILE"
+  info "Loaded parameters from: ${PARAMS_FILE}"
+
+  # Validate allowed values for any pre-set parameters
+  if [[ -n "${NETWORK_CONFIG:-}" ]]; then
+    [[ "$NETWORK_CONFIG" =~ ^(managed-network|custom-network|private-network)$ ]] || {
+      error "NETWORK_CONFIG must be: managed-network | custom-network | private-network"
+      exit 1
+    }
+  fi
+  if [[ -n "${NETWORK_MODEL:-}" ]]; then
+    [[ "$NETWORK_MODEL" =~ ^(azure-cni-overlay|kubenet)$ ]] || {
+      error "NETWORK_MODEL must be: azure-cni-overlay | kubenet"
+      exit 1
+    }
+  fi
+  if [[ -n "${NETWORK_POLICY:-}" ]]; then
+    [[ "$NETWORK_POLICY" =~ ^(azure|cilium)$ ]] || {
+      error "NETWORK_POLICY must be: azure | cilium"
+      exit 1
+    }
+  fi
+  if [[ -n "${K8S_AUTH:-}" ]]; then
+    [[ "$K8S_AUTH" =~ ^(entra|classic)$ ]] || {
+      error "K8S_AUTH must be: entra | classic"
+      exit 1
+    }
+  fi
+  if [[ -n "${IDENTITY_TYPE:-}" ]]; then
+    [[ "$IDENTITY_TYPE" =~ ^(system-assigned|user-assigned)$ ]] || {
+      error "IDENTITY_TYPE must be: system-assigned | user-assigned"
+      exit 1
+    }
+  fi
+  if [[ -n "${ENTRA_ADMIN_ENABLED:-}" ]]; then
+    [[ "$ENTRA_ADMIN_ENABLED" =~ ^(true|false)$ ]] || {
+      error "ENTRA_ADMIN_ENABLED must be: true | false"
+      exit 1
+    }
+  fi
+  if [[ -n "${NODE_COUNT:-}" ]]; then
+    [[ "$NODE_COUNT" =~ ^[0-9]+$ ]] && (( NODE_COUNT >= 1 )) || {
+      error "NODE_COUNT must be a positive integer"
+      exit 1
+    }
+  fi
+  if [[ -n "${PREFIX:-}" ]]; then
+    [[ "$PREFIX" =~ ^[a-z][a-z0-9-]*[a-z0-9]$ ]] || {
+      error "PREFIX must be at least 2 characters, start with a letter, lowercase alphanumeric with hyphens, no leading/trailing hyphens."
+      exit 1
+    }
+  fi
+fi
 
 # -----------------------------------------------------------------------------
 # Step 1: Authentication
@@ -118,26 +213,40 @@ success "Logged in as: ${CURRENT_USER_UPN}"
 
 header "Step 2: Subscription"
 
-info "Fetching available subscriptions..."
-mapfile -t SUB_NAMES < <(az account list --query "[?state=='Enabled'].name" -o tsv)
-mapfile -t SUB_IDS   < <(az account list --query "[?state=='Enabled'].id"   -o tsv)
+if [[ -n "${SUBSCRIPTION_ID:-}" ]]; then
+  info "Fetching subscription details..."
+  SUBSCRIPTION_NAME=$(az account show \
+    --subscription "$SUBSCRIPTION_ID" \
+    --query name -o tsv --only-show-errors 2>/dev/null || true)
+  if [[ -z "$SUBSCRIPTION_NAME" ]]; then
+    error "Subscription '${SUBSCRIPTION_ID}' not found or not accessible."
+    exit 1
+  fi
+  az account set --subscription "$SUBSCRIPTION_ID" --output none
+  from_params "Subscription" "${SUBSCRIPTION_NAME} (${SUBSCRIPTION_ID})"
+else
+  info "Fetching available subscriptions..."
+  mapfile -t SUB_NAMES < <(az account list --query "[?state=='Enabled'].name" -o tsv)
+  mapfile -t SUB_IDS   < <(az account list --query "[?state=='Enabled'].id"   -o tsv)
 
-if [[ ${#SUB_NAMES[@]} -eq 0 ]]; then
-  error "No subscriptions found for the current login."
-  exit 1
+  if [[ ${#SUB_NAMES[@]} -eq 0 ]]; then
+    error "No subscriptions found for the current login."
+    exit 1
+  fi
+
+  # Build display list with ID hint
+  DISPLAY_SUBS=()
+  for i in "${!SUB_NAMES[@]}"; do
+    DISPLAY_SUBS+=("${SUB_NAMES[$i]} (${SUB_IDS[$i]})")
+  done
+
+  pick_from_list SELECTED_SUB_DISPLAY "Select a subscription:" "${DISPLAY_SUBS[@]}"
+  SUBSCRIPTION_ID="${SUB_IDS[$PICK_IDX]}"
+  SUBSCRIPTION_NAME="${SUB_NAMES[$PICK_IDX]}"
+
+  az account set --subscription "$SUBSCRIPTION_ID"
 fi
 
-# Build display list with ID hint
-DISPLAY_SUBS=()
-for i in "${!SUB_NAMES[@]}"; do
-  DISPLAY_SUBS+=("${SUB_NAMES[$i]} (${SUB_IDS[$i]})")
-done
-
-pick_from_list SELECTED_SUB_DISPLAY "Select a subscription:" "${DISPLAY_SUBS[@]}"
-SUBSCRIPTION_ID="${SUB_IDS[$PICK_IDX]}"
-SUBSCRIPTION_NAME="${SUB_NAMES[$PICK_IDX]}"
-
-az account set --subscription "$SUBSCRIPTION_ID"
 success "Using subscription: ${SUBSCRIPTION_NAME} (${SUBSCRIPTION_ID})"
 
 # -----------------------------------------------------------------------------
@@ -145,7 +254,13 @@ success "Using subscription: ${SUBSCRIPTION_NAME} (${SUBSCRIPTION_ID})"
 # -----------------------------------------------------------------------------
 
 header "Step 3: Region"
-prompt LOCATION "Azure region (e.g. eastus, westeurope, australiaeast)"
+
+if [[ -n "${LOCATION:-}" ]]; then
+  from_params "Region" "$LOCATION"
+else
+  prompt LOCATION "Azure region (e.g. eastus, westeurope, australiaeast)"
+fi
+
 success "Region: ${LOCATION}"
 
 # -----------------------------------------------------------------------------
@@ -154,7 +269,10 @@ success "Region: ${LOCATION}"
 
 header "Step 4: Network Configuration"
 
-cat <<EOF
+if [[ -n "${NETWORK_CONFIG:-}" ]]; then
+  from_params "Network configuration" "$NETWORK_CONFIG"
+else
+  cat <<EOF
 
   ${BOLD}managed-network${RESET}
     Azure manages the VNet. API server VNet integration enabled.
@@ -169,11 +287,11 @@ cat <<EOF
     No public API endpoint. Private Arpio delegate required.
 
 EOF
-
-pick_from_list NETWORK_CONFIG "Select a network configuration:" \
-  "managed-network" \
-  "custom-network" \
-  "private-network"
+  pick_from_list NETWORK_CONFIG "Select a network configuration:" \
+    "managed-network" \
+    "custom-network" \
+    "private-network"
+fi
 
 success "Network configuration: ${NETWORK_CONFIG}"
 
@@ -186,8 +304,20 @@ header "Step 5: Networking Model"
 if [[ "$NETWORK_CONFIG" == "managed-network" ]]; then
   NETWORK_PLUGIN="azure"
   NETWORK_PLUGIN_MODE="overlay"
-  warn "managed-network requires Azure CNI Overlay. Kubenet is not supported with API server VNet integration."
-  info  "Network plugin set to: Azure CNI Overlay"
+  if [[ -n "${NETWORK_MODEL:-}" ]]; then
+    warn "NETWORK_MODEL is ignored for managed-network (always Azure CNI Overlay)."
+  fi
+  info "Network plugin set to: Azure CNI Overlay (required for managed-network)"
+elif [[ -n "${NETWORK_MODEL:-}" ]]; then
+  if [[ "$NETWORK_MODEL" == "azure-cni-overlay" ]]; then
+    NETWORK_PLUGIN="azure"
+    NETWORK_PLUGIN_MODE="overlay"
+  else
+    NETWORK_PLUGIN="kubenet"
+    NETWORK_PLUGIN_MODE=""
+  fi
+  from_params "Networking model" "$NETWORK_MODEL"
+  success "Networking model: ${NETWORK_MODEL}"
 else
   cat <<EOF
 
@@ -217,7 +347,10 @@ fi
 
 # Network policy — only applicable to Azure CNI Overlay
 if [[ "$NETWORK_PLUGIN_MODE" == "overlay" ]]; then
-  cat <<EOF
+  if [[ -n "${NETWORK_POLICY:-}" ]]; then
+    from_params "Network policy" "$NETWORK_POLICY"
+  else
+    cat <<EOF
 
   ${BOLD}azure${RESET} (default)
     Azure Network Policy Manager.
@@ -227,10 +360,11 @@ if [[ "$NETWORK_PLUGIN_MODE" == "overlay" ]]; then
     Requires Azure CNI Overlay (already selected).
 
 EOF
-  pick_from_list NETWORK_POLICY "Select a network policy engine:" \
-    "azure" \
-    "cilium"
-  success "Network policy: ${NETWORK_POLICY}"
+    pick_from_list NETWORK_POLICY "Select a network policy engine:" \
+      "azure" \
+      "cilium"
+    success "Network policy: ${NETWORK_POLICY}"
+  fi
 else
   NETWORK_POLICY="azure"
 fi
@@ -241,7 +375,10 @@ fi
 
 header "Step 6: Kubernetes Authentication"
 
-cat <<EOF
+if [[ -n "${K8S_AUTH:-}" ]]; then
+  from_params "Kubernetes auth" "$K8S_AUTH"
+else
+  cat <<EOF
 
   ${BOLD}entra${RESET}
     Users authenticate via Azure Entra ID tokens.
@@ -253,12 +390,30 @@ cat <<EOF
     No Entra dependency.
 
 EOF
-
-pick_from_list K8S_AUTH "Select Kubernetes authentication:" \
-  "entra" \
-  "classic"
+  pick_from_list K8S_AUTH "Select Kubernetes authentication:" \
+    "entra" \
+    "classic"
+fi
 
 success "Kubernetes auth: ${K8S_AUTH}"
+
+if [[ "$K8S_AUTH" == "entra" ]]; then
+  if [[ -n "${ENTRA_ADMIN_ENABLED:-}" ]]; then
+    from_params "Entra admin group" "$ENTRA_ADMIN_ENABLED"
+    [[ "$ENTRA_ADMIN_ENABLED" == "false" ]] && \
+      warn "Skipping Entra admin group. Grant cluster access manually via Azure RBAC after deployment."
+  else
+    ENTRA_ADMIN_ENABLED=false
+    echo ""
+    if confirm_yes "Grant ${CURRENT_USER_UPN} cluster-admin access via a new Entra admin group?"; then
+      ENTRA_ADMIN_ENABLED=true
+    else
+      warn "Skipping Entra admin group. Grant cluster access manually via Azure RBAC after deployment."
+    fi
+  fi
+else
+  ENTRA_ADMIN_ENABLED=false
+fi
 
 # -----------------------------------------------------------------------------
 # Step 7: Managed Identity
@@ -266,7 +421,10 @@ success "Kubernetes auth: ${K8S_AUTH}"
 
 header "Step 7: Managed Identity"
 
-cat <<EOF
+if [[ -n "${IDENTITY_TYPE:-}" ]]; then
+  from_params "Managed identity" "$IDENTITY_TYPE"
+else
+  cat <<EOF
 
   ${BOLD}system-assigned${RESET}
     Identity is created and managed automatically with the cluster.
@@ -278,10 +436,10 @@ cat <<EOF
     Managed Identity Operator on the identity.
 
 EOF
-
-pick_from_list IDENTITY_TYPE "Select managed identity type:" \
-  "system-assigned" \
-  "user-assigned"
+  pick_from_list IDENTITY_TYPE "Select managed identity type:" \
+    "system-assigned" \
+    "user-assigned"
+fi
 
 # Bicep @allowed values use PascalCase; shell conditionals use the lowercase form above
 IDENTITY_TYPE_BICEP=$([[ "$IDENTITY_TYPE" == "user-assigned" ]] && echo "UserAssigned" || echo "SystemAssigned")
@@ -289,17 +447,21 @@ IDENTITY_TYPE_BICEP=$([[ "$IDENTITY_TYPE" == "user-assigned" ]] && echo "UserAss
 success "Managed identity: ${IDENTITY_TYPE}"
 
 # -----------------------------------------------------------------------------
-# Step 8: Resource Prefix
+# Step 8: Resource Naming
 # -----------------------------------------------------------------------------
 
 header "Step 8: Resource Naming"
 
-prompt PREFIX "Resource prefix (2+ chars, lowercase alphanumeric and hyphens, e.g. ar, arpio, myteam-aks)"
+if [[ -n "${PREFIX:-}" ]]; then
+  from_params "Resource prefix" "$PREFIX"
+else
+  prompt PREFIX "Resource prefix (2+ chars, lowercase alphanumeric and hyphens, e.g. ar, arpio, myteam-aks)"
 
-# Validate prefix: lowercase alphanumeric and hyphens, no leading/trailing hyphen, min 2 chars
-if ! [[ "$PREFIX" =~ ^[a-z0-9][a-z0-9-]*[a-z0-9]$ ]]; then
-  error "Prefix must be at least 2 characters, lowercase alphanumeric with hyphens, no leading/trailing hyphens."
-  exit 1
+  # Validate prefix: must start with a letter (Key Vault names must start with a letter)
+  if ! [[ "$PREFIX" =~ ^[a-z][a-z0-9-]*[a-z0-9]$ ]]; then
+    error "Prefix must be at least 2 characters, start with a letter, lowercase alphanumeric with hyphens, no leading/trailing hyphens."
+    exit 1
+  fi
 fi
 
 SUFFIX=$(derive_suffix "$PREFIX" "$SUBSCRIPTION_ID" "$CURRENT_USER_UPN")
@@ -313,6 +475,12 @@ SUBNET_NAME="${PREFIX}-subnet-${SUFFIX}"
 IDENTITY_NAME="${PREFIX}-id-${SUFFIX}"
 ENTRA_GROUP_NAME="${PREFIX}-admins-${SUFFIX}"
 
+# Key Vault: max 24 chars, must start with a letter.
+# Truncate prefix to 14 chars to leave room for -kv-{6char suffix}.
+KV_PREFIX="${PREFIX:0:14}"
+KV_PREFIX="${KV_PREFIX%-}"   # strip trailing hyphen if truncation left one
+KV_NAME="${KV_PREFIX}-kv-${SUFFIX}"
+
 echo ""
 info "Derived resource names:"
 echo "  Suffix:            ${SUFFIX}"
@@ -323,10 +491,11 @@ if [[ "$NETWORK_CONFIG" != "managed-network" ]]; then
   echo "  Subnet:            ${SUBNET_NAME}"
 fi
 echo "  Cluster:           ${CLUSTER_NAME}"
+echo "  Key Vault:         ${KV_NAME}"
 if [[ "$IDENTITY_TYPE" == "user-assigned" ]]; then
   echo "  Managed Identity:  ${IDENTITY_NAME}"
 fi
-if [[ "$K8S_AUTH" == "entra" ]]; then
+if [[ "$ENTRA_ADMIN_ENABLED" == "true" ]]; then
   echo "  Entra Admin Group: ${ENTRA_GROUP_NAME}"
 fi
 
@@ -336,12 +505,21 @@ fi
 
 header "Step 9: Node Pool"
 
-prompt VM_SKU      "Node VM SKU"    "Standard_D2s_v3"
-prompt NODE_COUNT  "Node count"     "2"
+if [[ -n "${VM_SKU:-}" ]]; then
+  from_params "Node VM SKU" "$VM_SKU"
+else
+  prompt VM_SKU "Node VM SKU" "Standard_D2s_v3"
+fi
 
-if ! [[ "$NODE_COUNT" =~ ^[0-9]+$ ]] || (( NODE_COUNT < 1 )); then
-  error "Node count must be a positive integer."
-  exit 1
+if [[ -n "${NODE_COUNT:-}" ]]; then
+  from_params "Node count" "$NODE_COUNT"
+else
+  prompt NODE_COUNT "Node count" "2"
+
+  if ! [[ "$NODE_COUNT" =~ ^[0-9]+$ ]] || (( NODE_COUNT < 1 )); then
+    error "Node count must be a positive integer."
+    exit 1
+  fi
 fi
 
 success "Node pool: ${NODE_COUNT}x ${VM_SKU}"
@@ -358,7 +536,11 @@ cat <<EOF
   ${BOLD}Region:${RESET}             ${LOCATION}
   ${BOLD}Configuration:${RESET}      ${NETWORK_CONFIG}
   ${BOLD}Network plugin:${RESET}     ${NETWORK_PLUGIN}${NETWORK_PLUGIN_MODE:+ (${NETWORK_PLUGIN_MODE})}
-  ${BOLD}Network policy:${RESET}     ${NETWORK_POLICY}
+EOF
+if [[ "$NETWORK_PLUGIN_MODE" == "overlay" ]]; then
+  echo -e "  ${BOLD}Network policy:${RESET}     ${NETWORK_POLICY}"
+fi
+cat <<EOF
   ${BOLD}Kubernetes auth:${RESET}    ${K8S_AUTH}
   ${BOLD}Managed identity:${RESET}   ${IDENTITY_TYPE}
   ${BOLD}Prefix / Suffix:${RESET}    ${PREFIX} / ${SUFFIX}
@@ -375,6 +557,7 @@ fi
 
 cat <<EOF
   ${BOLD}Cluster:${RESET}            ${CLUSTER_NAME}
+  ${BOLD}Key Vault:${RESET}          ${KV_NAME}
   ${BOLD}Node pool:${RESET}          ${NODE_COUNT}x ${VM_SKU}
 EOF
 
@@ -382,7 +565,11 @@ if [[ "$IDENTITY_TYPE" == "user-assigned" ]]; then
   echo -e "  ${BOLD}Identity:${RESET}           ${IDENTITY_NAME}"
 fi
 if [[ "$K8S_AUTH" == "entra" ]]; then
-  echo -e "  ${BOLD}Entra group:${RESET}        ${ENTRA_GROUP_NAME}"
+  if [[ "$ENTRA_ADMIN_ENABLED" == "true" ]]; then
+    echo -e "  ${BOLD}Entra admin group:${RESET}  ${ENTRA_GROUP_NAME}"
+  else
+    echo -e "  ${BOLD}Entra admin group:${RESET}  none (configure manually after deployment)"
+  fi
 fi
 
 echo ""
@@ -427,7 +614,14 @@ if [[ "$IDENTITY_TYPE" == "user-assigned" ]]; then
   IDENTITY_RESOURCE_ID=$(az identity show \
     --name "$IDENTITY_NAME" \
     --resource-group "$RG_MAIN" \
-    --query id -o tsv)
+    --query id -o tsv \
+    --only-show-errors)
+
+  IDENTITY_PRINCIPAL_ID=$(az identity show \
+    --name "$IDENTITY_NAME" \
+    --resource-group "$RG_MAIN" \
+    --query principalId -o tsv \
+    --only-show-errors)
 
   success "Created identity: ${IDENTITY_NAME}"
 
@@ -444,7 +638,9 @@ fi
 # Entra Admin Group
 # -----------------------------------------------------------------------------
 
-if [[ "$K8S_AUTH" == "entra" ]]; then
+ENTRA_GROUP_ID=""
+
+if [[ "$ENTRA_ADMIN_ENABLED" == "true" ]]; then
   header "Creating Entra Admin Group"
 
   info "Creating Entra group: ${ENTRA_GROUP_NAME}"
@@ -489,20 +685,24 @@ if [[ "$NETWORK_CONFIG" != "managed-network" ]]; then
   header "Provisioning Network"
 
   info "Deploying VNet and subnet into ${RG_INFRA}..."
-  az deployment group create \
+  SUBNET_ID=$(az deployment group create \
     --resource-group "$RG_INFRA" \
     --template-file "${BICEP_DIR}/modules/network.bicep" \
     --parameters \
         vnetName="$VNET_NAME" \
         subnetName="$SUBNET_NAME" \
         location="$LOCATION" \
-    --output none
+    --query "properties.outputs.subnetId.value" -o tsv)
 
-  SUBNET_ID=$(az network vnet subnet show \
-    --resource-group "$RG_INFRA" \
-    --vnet-name "$VNET_NAME" \
-    --name "$SUBNET_NAME" \
-    --query id -o tsv)
+  # For private-network, the KV private endpoint needs the VNet ID for DNS zone linking.
+  VNET_ID=""
+  if [[ "$NETWORK_CONFIG" == "private-network" ]]; then
+    VNET_ID=$(az network vnet show \
+      --name "$VNET_NAME" \
+      --resource-group "$RG_INFRA" \
+      --query id -o tsv \
+      --only-show-errors)
+  fi
 
   success "VNet and subnet ready: ${VNET_NAME} / ${SUBNET_NAME}"
 fi
@@ -538,10 +738,20 @@ fi
 
 if [[ "$IDENTITY_TYPE" == "user-assigned" ]]; then
   BICEP_PARAMS+=(userAssignedIdentityId="$IDENTITY_RESOURCE_ID")
+  BICEP_PARAMS+=(clusterIdentityPrincipalId="$IDENTITY_PRINCIPAL_ID")
 fi
 
-if [[ "$K8S_AUTH" == "entra" ]]; then
+if [[ "$ENTRA_ADMIN_ENABLED" == "true" ]]; then
   BICEP_PARAMS+=(entraAdminGroupId="$ENTRA_GROUP_ID")
+fi
+
+BICEP_PARAMS+=(
+  kvName="$KV_NAME"
+  deployingUserPrincipalId="$CURRENT_USER_ID"
+)
+
+if [[ "$NETWORK_CONFIG" == "private-network" ]]; then
+  BICEP_PARAMS+=(vnetId="$VNET_ID")
 fi
 
 az deployment group create \
@@ -563,13 +773,16 @@ if [[ "$K8S_AUTH" == "entra" ]]; then
     --resource-group "$RG_MAIN" \
     --name "$CLUSTER_NAME" \
     --overwrite-existing
-  info "Note: kubectl commands will use Entra authentication via your current az login."
+  info "Entra auth requires kubelogin to convert the kubeconfig before kubectl will work."
+  info "Run the following to configure token-based auth using your current az login:"
+  echo -e "    kubelogin convert-kubeconfig -l azurecli"
 else
   az aks get-credentials \
     --resource-group "$RG_MAIN" \
     --name "$CLUSTER_NAME" \
     --overwrite-existing \
     --admin
+  info "kubeconfig uses cluster admin certificate — no Entra dependency."
 fi
 
 success "kubeconfig updated. Cluster context: ${CLUSTER_NAME}"
@@ -584,19 +797,21 @@ cat <<EOF
 
   ${GREEN}${BOLD}AKS cluster is ready.${RESET}
 
-  ${BOLD}Cluster:${RESET}       ${CLUSTER_NAME}
-  ${BOLD}Config:${RESET}        ${NETWORK_CONFIG}
+  ${BOLD}Cluster:${RESET}        ${CLUSTER_NAME}
+  ${BOLD}Key Vault:${RESET}      ${KV_NAME}
+  ${BOLD}Config:${RESET}         ${NETWORK_CONFIG}
   ${BOLD}Resource group:${RESET} ${RG_MAIN}
 EOF
 
 if [[ "$NETWORK_CONFIG" != "managed-network" ]]; then
-  echo -e "  ${BOLD}Infra RG:${RESET}      ${RG_INFRA}"
+  echo -e "  ${BOLD}Infra RG:${RESET}       ${RG_INFRA}"
 fi
 
 if [[ "$NETWORK_CONFIG" == "private-network" ]]; then
   echo ""
   warn "This is a private cluster. Install the Arpio private delegate inside the cluster VNet."
   warn "The public Arpio delegate cannot reach private API endpoints."
+  warn "Key Vault public access is disabled — manage secrets from within the cluster VNet."
 fi
 
 echo ""

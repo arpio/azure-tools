@@ -52,6 +52,18 @@ param nodeVmSku string = 'Standard_D2s_v3'
 @minValue(1)
 param nodeCount int = 2
 
+@description('Name of the Key Vault. Max 24 chars, must start with a letter.')
+param kvName string
+
+@description('Object ID of the deploying user. Granted Key Vault Administrator.')
+param deployingUserPrincipalId string
+
+@description('Principal ID of the cluster managed identity. Pass when identityType is UserAssigned (resolved before cluster creation). Leave empty for SystemAssigned — derived from the cluster output post-creation.')
+param clusterIdentityPrincipalId string = ''
+
+@description('VNet resource ID for Key Vault private endpoint DNS zone link. Required when networkConfig is private-network.')
+param vnetId string = ''
+
 // ---------------------------------------------------------------------------
 // Derived values
 // ---------------------------------------------------------------------------
@@ -60,6 +72,12 @@ var isPrivate     = networkConfig == 'private-network'
 var isManagedNet  = networkConfig == 'managed-network'
 var enableEntra   = k8sAuth == 'entra'
 var enableVnetInt = isManagedNet  // API server VNet integration only for managed-network
+
+// For UserAssigned: caller passes the identity's principal ID (known before cluster creation).
+// For SystemAssigned: derive from cluster output after creation.
+var kvPrincipalId = empty(clusterIdentityPrincipalId)
+  ? cluster.outputs.clusterPrincipalId
+  : clusterIdentityPrincipalId
 
 // Guard: custom-network and private-network require a subnetId. Passing an invalid
 // sentinel (not a resource ID) causes ARM to reject the deployment at validation
@@ -93,9 +111,28 @@ module cluster './modules/cluster.bicep' = {
 }
 
 // ---------------------------------------------------------------------------
+// Key Vault module
+// ---------------------------------------------------------------------------
+
+module keyvault './modules/keyvault.bicep' = {
+  name: 'key-vault'
+  params: {
+    kvName:                   kvName
+    location:                 location
+    clusterPrincipalId:       kvPrincipalId
+    deployingUserPrincipalId: deployingUserPrincipalId
+    isPrivateNetwork:         isPrivate
+    subnetId:                 effectiveSubnetId
+    vnetId:                   vnetId
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Outputs
 // ---------------------------------------------------------------------------
 
-output clusterName string = cluster.outputs.clusterName
-output clusterFqdn string = cluster.outputs.clusterFqdn
+output clusterName       string = cluster.outputs.clusterName
+output clusterFqdn       string = cluster.outputs.clusterFqdn
 output nodeResourceGroup string = cluster.outputs.nodeResourceGroup
+output kvName            string = keyvault.outputs.kvName
+output kvUri             string = keyvault.outputs.kvUri

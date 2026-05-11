@@ -23,3 +23,5 @@ param nodeCount             = 2
 // param clusterName
 // param location
 // param entraAdminGroupId
+// param kvName
+// param deployingUserPrincipalId

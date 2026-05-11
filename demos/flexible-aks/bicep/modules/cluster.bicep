@@ -147,7 +147,9 @@ resource aksCluster 'Microsoft.ContainerService/managedClusters@2024-09-01' = {
 // Outputs
 // ---------------------------------------------------------------------------
 
-output clusterName       string = aksCluster.name
-output clusterFqdn       string = aksCluster.properties.fqdn
-output nodeResourceGroup string = aksCluster.properties.nodeResourceGroup
+output clusterName             string = aksCluster.name
+output clusterFqdn             string = aksCluster.properties.fqdn
+output nodeResourceGroup       string = aksCluster.properties.nodeResourceGroup
 output kubeletIdentityObjectId string = aksCluster.properties.identityProfile.kubeletidentity.objectId
+// Empty string for UserAssigned clusters; main.bicep uses clusterIdentityPrincipalId param instead.
+output clusterPrincipalId      string = aksCluster.identity.principalId
