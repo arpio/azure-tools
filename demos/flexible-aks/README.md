@@ -80,7 +80,7 @@ A summary is shown before any resources are created, with a confirmation prompt.
 
 All resources are named using a consistent `{prefix}-{resource}-{suffix}` convention.
 
-**Prefix rules:** lowercase alphanumeric, hyphens allowed in the middle, minimum 2 characters, no leading or trailing hyphens. Examples: `ar`, `arpio`, `myteam-aks`.
+**Prefix rules:** lowercase letters and numbers only — no hyphens. Minimum 2 characters. This constraint ensures the prefix is directly usable in Azure storage account names, which are the most restrictive common resource type. Examples: `ar`, `arpio`, `myteam`, `staging`.
 
 The suffix is a **deterministic 6-character hash** derived from:
 - Your resource prefix

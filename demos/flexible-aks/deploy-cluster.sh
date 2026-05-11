@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -x
 set -euo pipefail
 
 # =============================================================================
@@ -178,8 +179,8 @@ if [[ -n "$PARAMS_FILE" ]]; then
     }
   fi
   if [[ -n "${PREFIX:-}" ]]; then
-    [[ "$PREFIX" =~ ^[a-z][a-z0-9-]*[a-z0-9]$ ]] || {
-      error "PREFIX must be at least 2 characters, start with a letter, lowercase alphanumeric with hyphens, no leading/trailing hyphens."
+    [[ "$PREFIX" =~ ^[a-z][a-z0-9]+$ ]] || {
+      error "PREFIX must be 2+ characters, lowercase letters and numbers only (no hyphens). Example: arpio, myteam, staging."
       exit 1
     }
   fi
@@ -455,11 +456,11 @@ header "Step 8: Resource Naming"
 if [[ -n "${PREFIX:-}" ]]; then
   from_params "Resource prefix" "$PREFIX"
 else
-  prompt PREFIX "Resource prefix (2+ chars, lowercase alphanumeric and hyphens, e.g. ar, arpio, myteam-aks)"
+  prompt PREFIX "Resource prefix (2+ chars, lowercase letters and numbers only, e.g. ar, arpio, myteam)"
 
-  # Validate prefix: must start with a letter (Key Vault names must start with a letter)
-  if ! [[ "$PREFIX" =~ ^[a-z][a-z0-9-]*[a-z0-9]$ ]]; then
-    error "Prefix must be at least 2 characters, start with a letter, lowercase alphanumeric with hyphens, no leading/trailing hyphens."
+  # No hyphens: prefix must be usable as-is in storage account names (most restrictive Azure resource type).
+  if ! [[ "$PREFIX" =~ ^[a-z][a-z0-9]+$ ]]; then
+    error "Prefix must be 2+ characters, lowercase letters and numbers only (no hyphens). Example: arpio, myteam, staging."
     exit 1
   fi
 fi

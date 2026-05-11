@@ -50,8 +50,9 @@
 # Allowed: system-assigned | user-assigned
 #IDENTITY_TYPE="system-assigned"
 
-# Resource name prefix (2+ chars, lowercase alphanumeric and hyphens, no leading/trailing hyphens).
-# Examples: ar, arpio, myteam-aks
+# Resource name prefix (2+ chars, lowercase letters and numbers only — no hyphens).
+# Must be safe for all Azure resource types including storage accounts.
+# Examples: ar, arpio, myteam, staging
 #PREFIX="arpio"
 
 # Node pool VM SKU.
