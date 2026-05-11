@@ -209,3 +209,6 @@ __marimo__/
 .DS_store
 .vscode
 demos/lamp-app/infrastructure/deployment-outputs.json
+
+# Claude Code
+.claude/settings.local.json
