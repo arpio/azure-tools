@@ -22,8 +22,7 @@ The script walks through an interactive prompt flow and deploys an AKS cluster u
 
 - [Azure CLI](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli) `>= 2.56.0`
 - [Bicep CLI](https://learn.microsoft.com/en-us/azure/azure-resource-manager/bicep/install) `>= 0.25.0` (installed via `az bicep install`)
-- `jq` (for JSON parsing in shell)
-- `sha256sum` (standard on Linux/macOS via coreutils)
+- `openssl` (for suffix hash generation — available natively on Linux and macOS)
 - Azure account with permissions to create resource groups, AKS clusters, managed identities, and (if using Entra auth) Entra groups
 
 Verify your setup:
@@ -31,7 +30,7 @@ Verify your setup:
 ```bash
 az version
 az bicep version
-jq --version
+openssl version
 ```
 
 ---
@@ -179,7 +178,7 @@ User-assigned identities persist independently of the cluster and can be reused 
 ## File Structure
 
 ```
-aks-deploy/
+flexible-aks/
 ├── README.md
 ├── deploy-cluster.sh         # Interactive deployment script
 └── bicep/

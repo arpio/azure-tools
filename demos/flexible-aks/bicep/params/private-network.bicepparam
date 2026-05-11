@@ -11,6 +11,7 @@ using '../main.bicep'
 param networkConfig         = 'private-network'
 param networkPlugin         = 'azure'        // or 'kubenet'
 param networkPluginMode     = 'overlay'      // empty string if kubenet
+param networkPolicy         = 'azure'        // or 'cilium' (Azure CNI Overlay only)
 param k8sAuth               = 'entra'
 param identityType          = 'SystemAssigned'
 param nodeVmSku             = 'Standard_D2s_v3'

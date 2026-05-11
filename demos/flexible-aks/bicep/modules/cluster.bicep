@@ -90,6 +90,8 @@ var networkProfile = networkPluginMode == 'overlay' ? {
   networkPolicy:     networkPolicy
   networkDataplane:  networkPolicy == 'cilium' ? 'cilium' : 'azure'
 } : {
+  // networkPolicy intentionally omitted for kubenet — Azure Network Policy and
+  // Cilium both require Azure CNI Overlay. Kubenet uses its own UDR-based routing.
   networkPlugin: networkPlugin
 }
 

@@ -87,7 +87,7 @@ confirm() {
 derive_suffix() {
   # Deterministic 6-char suffix from prefix + subscription ID + username
   local raw="${1}${2}${3}"
-  echo -n "$raw" | sha256sum | cut -c1-6
+  echo -n "$raw" | openssl dgst -sha256 | awk '{print $2}' | cut -c1-6
 }
 
 # -----------------------------------------------------------------------------
@@ -105,7 +105,7 @@ fi
 CURRENT_USER_UPN=$(az ad signed-in-user show --query userPrincipalName -o tsv 2>/dev/null || true)
 CURRENT_USER_ID=$(az ad signed-in-user show --query id -o tsv 2>/dev/null || true)
 
-if [[ -z "$CURRENT_USER_UPN" ]]; then
+if [[ -z "$CURRENT_USER_UPN" ]] || [[ -z "$CURRENT_USER_ID" ]]; then
   error "Could not determine the logged-in user. Ensure your account has Azure AD read permissions."
   exit 1
 fi
@@ -119,8 +119,8 @@ success "Logged in as: ${CURRENT_USER_UPN}"
 header "Step 2: Subscription"
 
 info "Fetching available subscriptions..."
-mapfile -t SUB_NAMES < <(az account list --query "[].name" -o tsv)
-mapfile -t SUB_IDS   < <(az account list --query "[].id"   -o tsv)
+mapfile -t SUB_NAMES < <(az account list --query "[?state=='Enabled'].name" -o tsv)
+mapfile -t SUB_IDS   < <(az account list --query "[?state=='Enabled'].id"   -o tsv)
 
 if [[ ${#SUB_NAMES[@]} -eq 0 ]]; then
   error "No subscriptions found for the current login."
@@ -282,6 +282,9 @@ EOF
 pick_from_list IDENTITY_TYPE "Select managed identity type:" \
   "system-assigned" \
   "user-assigned"
+
+# Bicep @allowed values use PascalCase; shell conditionals use the lowercase form above
+IDENTITY_TYPE_BICEP=$([[ "$IDENTITY_TYPE" == "user-assigned" ]] && echo "UserAssigned" || echo "SystemAssigned")
 
 success "Managed identity: ${IDENTITY_TYPE}"
 
@@ -520,7 +523,7 @@ BICEP_PARAMS=(
   networkPlugin="$NETWORK_PLUGIN"
   networkPolicy="$NETWORK_POLICY"
   k8sAuth="$K8S_AUTH"
-  identityType="$IDENTITY_TYPE"
+  identityType="$IDENTITY_TYPE_BICEP"
   nodeVmSku="$VM_SKU"
   nodeCount="$NODE_COUNT"
 )
