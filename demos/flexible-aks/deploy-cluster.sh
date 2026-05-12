@@ -501,6 +501,11 @@ KV_PREFIX="${PREFIX:0:14}"
 KV_PREFIX="${KV_PREFIX%-}"   # strip trailing hyphen if truncation left one
 KV_NAME="${KV_PREFIX}-kv-${SUFFIX}"
 
+# ACR: alphanumeric only, no hyphens. Prefix already satisfies this constraint.
+# Truncate prefix to 37 chars to leave room for acr + 6-char suffix (max 50 total).
+ACR_PREFIX="${PREFIX:0:37}"
+ACR_NAME="${ACR_PREFIX}acr${SUFFIX}"
+
 echo ""
 info "Derived resource names:"
 echo "  Suffix:            ${SUFFIX}"
@@ -512,6 +517,7 @@ if [[ "$NETWORK_CONFIG" != "managed-network" ]]; then
 fi
 echo "  Cluster:           ${CLUSTER_NAME}"
 echo "  Key Vault:         ${KV_NAME}"
+echo "  Container Registry:${ACR_NAME}"
 if [[ "$IDENTITY_TYPE" == "user-assigned" ]]; then
   echo "  Managed Identity:  ${IDENTITY_NAME}"
 fi
@@ -583,6 +589,7 @@ fi
 cat <<EOF
   ${BOLD}Cluster:${RESET}            ${CLUSTER_NAME}
   ${BOLD}Key Vault:${RESET}          ${KV_NAME}
+  ${BOLD}Container Registry:${RESET} ${ACR_NAME}
   ${BOLD}Node pool:${RESET}          ${NODE_COUNT}x ${VM_SKU}
 EOF
 
@@ -835,6 +842,7 @@ fi
 
 BICEP_PARAMS+=(
   kvName="$KV_NAME"
+  acrName="$ACR_NAME"
   deployingUserPrincipalId="$CURRENT_USER_ID"
 )
 
@@ -895,6 +903,7 @@ cat <<EOF
   ${GREEN}${BOLD}AKS cluster is ready.${RESET}
 
   ${BOLD}Cluster:${RESET}        ${CLUSTER_NAME}
+  ${BOLD}Registry:${RESET}       ${ACR_NAME}.azurecr.io
   ${BOLD}Key Vault:${RESET}      ${KV_NAME}
   ${BOLD}Config:${RESET}         ${NETWORK_CONFIG} — ${NETWORK_CONFIG_DESC}
   ${BOLD}Resource group:${RESET} ${RG_MAIN}

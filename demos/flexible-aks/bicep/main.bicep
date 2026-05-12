@@ -64,6 +64,9 @@ param clusterIdentityPrincipalId string = ''
 @description('VNet resource ID for Key Vault private endpoint DNS zone link. Required when networkConfig is private-network.')
 param vnetId string = ''
 
+@description('Name of the Azure Container Registry. Alphanumeric only, 5–50 chars.')
+param acrName string
+
 // ---------------------------------------------------------------------------
 // Derived values
 // ---------------------------------------------------------------------------
@@ -128,6 +131,23 @@ module keyvault './modules/keyvault.bicep' = {
 }
 
 // ---------------------------------------------------------------------------
+// Container Registry module
+// ---------------------------------------------------------------------------
+
+module acr './modules/acr.bicep' = {
+  name: 'container-registry'
+  params: {
+    acrName:                  acrName
+    location:                 location
+    isPrivateNetwork:         isPrivate
+    subnetId:                 effectiveSubnetId
+    vnetId:                   vnetId
+    deployingUserPrincipalId: deployingUserPrincipalId
+    kubeletIdentityObjectId:  cluster.outputs.kubeletIdentityObjectId
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Outputs
 // ---------------------------------------------------------------------------
 
@@ -136,3 +156,5 @@ output clusterFqdn       string = cluster.outputs.clusterFqdn
 output nodeResourceGroup string = cluster.outputs.nodeResourceGroup
 output kvName            string = keyvault.outputs.kvName
 output kvUri             string = keyvault.outputs.kvUri
+output acrName           string = acr.outputs.acrName
+output acrLoginServer    string = acr.outputs.acrLoginServer

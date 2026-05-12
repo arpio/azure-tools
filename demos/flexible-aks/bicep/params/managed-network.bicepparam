@@ -24,4 +24,5 @@ param nodeCount             = 2
 // param location
 // param entraAdminGroupId
 // param kvName
+// param acrName
 // param deployingUserPrincipalId

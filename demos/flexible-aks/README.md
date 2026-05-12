@@ -100,6 +100,7 @@ The suffix is displayed early in the run so you can note it.
 | AKS cluster | `{prefix}-aks-{suffix}` |
 | VNet (custom/private only) | `{prefix}-vnet-{suffix}` |
 | Subnet (custom/private only) | `{prefix}-subnet-{suffix}` |
+| Container registry | `{prefix}acr{suffix}` |
 | User-assigned identity (if selected) | `{prefix}-id-{suffix}` |
 | Entra admin group (if Entra auth) | `{prefix}-admins-{suffix}` |
 
@@ -114,6 +115,8 @@ One resource group containing all resources:
 ```
 {prefix}-rg-{suffix}
   └── AKS cluster (Azure manages the VNet internally)
+  └── Container registry
+  └── Key Vault
 ```
 
 ### `custom-network` and `private-network`
@@ -123,6 +126,8 @@ Two resource groups, mirroring Azure's own pattern for separating managed infras
 ```
 {prefix}-rg-{suffix}
   └── AKS cluster
+  └── Container registry
+  └── Key Vault
   └── Managed identity (if user-assigned)
 
 {prefix}-infra-rg-{suffix}
@@ -203,7 +208,9 @@ flexible-aks/
     ├── modules/
     │   ├── cluster.bicep     # AKS cluster (all configs)
     │   ├── network.bicep     # VNet + subnet (custom/private configs)
-    │   └── identity.bicep    # User-assigned managed identity
+    │   ├── identity.bicep    # User-assigned managed identity
+    │   ├── keyvault.bicep    # Key Vault + RBAC + private endpoint
+    │   └── acr.bicep         # Container registry + RBAC + private endpoint
     └── params/
         ├── managed-network.bicepparam
         ├── custom-network.bicepparam
@@ -231,6 +238,8 @@ az group delete --name {prefix}-rg-{suffix} --yes
 az group delete --name {prefix}-infra-rg-{suffix} --yes
 ```
 
+The container registry is in the main resource group and is deleted along with it.
+
 If you used Entra auth, remove the admin group:
 
 ```bash
@@ -244,5 +253,5 @@ az ad group delete --group {prefix}-admins-{suffix}
 - **Private delegate not provisioned** — for `private-network` clusters, the Arpio private delegate must be installed manually inside the cluster VNet after deployment. The script prints a reminder on completion.
 - **`managed-network` requires Azure CNI Overlay** — Kubenet is not supported with API server VNet integration. This is an Azure platform constraint, not a script limitation.
 - **VNet address ranges are fixed defaults** — the script uses `10.0.0.0/8` for the VNet and `10.240.0.0/16` for the node subnet. Edit `bicep/modules/network.bicep` to adjust for environments with conflicting CIDR ranges.
-- **No app deployment** — demo app and datasource deployment is handled by a separate script (`deploy-app.sh`, not yet implemented).
+- **No app deployment** — the script provisions the cluster and registry but does not deploy a workload. Use `deploy-app.sh` (separate script) to deploy an application.
 - **Single node pool** — the script provisions a single system node pool. Additional user node pools must be added manually via `az aks nodepool add` after deployment.
