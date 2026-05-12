@@ -262,6 +262,15 @@ else
   prompt LOCATION "Azure region (e.g. eastus, westeurope, australiaeast)"
 fi
 
+info "Validating region..."
+VALID_LOCATION=$(az account list-locations \
+  --query "[?name=='${LOCATION}'].name" -o tsv --only-show-errors 2>/dev/null || true)
+if [[ -z "$VALID_LOCATION" ]]; then
+  error "Region '${LOCATION}' is not a valid Azure region for this subscription."
+  info "Run: az account list-locations --query \"[].name\" -o tsv"
+  exit 1
+fi
+
 success "Region: ${LOCATION}"
 
 # -----------------------------------------------------------------------------
@@ -270,8 +279,9 @@ success "Region: ${LOCATION}"
 
 header "Step 4: Network Configuration"
 
+_nc_from_params=false
 if [[ -n "${NETWORK_CONFIG:-}" ]]; then
-  from_params "Network configuration" "$NETWORK_CONFIG"
+  _nc_from_params=true
 else
   cat <<EOF
 
@@ -294,7 +304,15 @@ EOF
     "private-network"
 fi
 
-success "Network configuration: ${NETWORK_CONFIG}"
+case "$NETWORK_CONFIG" in
+  managed-network) NETWORK_CONFIG_DESC="Azure-managed VNet, API server VNet integration, public API endpoint, public delegate" ;;
+  custom-network)  NETWORK_CONFIG_DESC="script-created VNet, public API endpoint, public delegate" ;;
+  private-network) NETWORK_CONFIG_DESC="script-created VNet, private API endpoint, private delegate required" ;;
+  *) error "Invalid network configuration: '${NETWORK_CONFIG}'. Allowed: managed-network | custom-network | private-network"; exit 1 ;;
+esac
+
+[[ "$_nc_from_params" == "true" ]] && from_params "Network configuration" "${NETWORK_CONFIG} — ${NETWORK_CONFIG_DESC}"
+success "Network configuration: ${NETWORK_CONFIG} — ${NETWORK_CONFIG_DESC}"
 
 # -----------------------------------------------------------------------------
 # Step 5: Networking Model (CNI / Kubenet)
@@ -466,6 +484,7 @@ else
 fi
 
 SUFFIX=$(derive_suffix "$PREFIX" "$SUBSCRIPTION_ID" "$CURRENT_USER_UPN")
+[[ -n "$SUFFIX" ]] || { error "Failed to derive resource suffix — check that openssl is installed."; exit 1; }
 
 # Resource names
 RG_MAIN="${PREFIX}-rg-${SUFFIX}"
@@ -512,6 +531,11 @@ else
   prompt VM_SKU "Node VM SKU" "Standard_D2s_v3"
 fi
 
+if ! [[ "$VM_SKU" =~ ^Standard_[A-Za-z0-9_]+$ ]]; then
+  error "VM SKU '${VM_SKU}' does not match expected format (e.g. Standard_D2s_v3)."
+  exit 1
+fi
+
 if [[ -n "${NODE_COUNT:-}" ]]; then
   from_params "Node count" "$NODE_COUNT"
 else
@@ -535,7 +559,7 @@ cat <<EOF
 
   ${BOLD}Subscription:${RESET}       ${SUBSCRIPTION_NAME}
   ${BOLD}Region:${RESET}             ${LOCATION}
-  ${BOLD}Configuration:${RESET}      ${NETWORK_CONFIG}
+  ${BOLD}Configuration:${RESET}      ${NETWORK_CONFIG} — ${NETWORK_CONFIG_DESC}
   ${BOLD}Network plugin:${RESET}     ${NETWORK_PLUGIN}${NETWORK_PLUGIN_MODE:+ (${NETWORK_PLUGIN_MODE})}
 EOF
 if [[ "$NETWORK_PLUGIN_MODE" == "overlay" ]]; then
@@ -617,12 +641,14 @@ if [[ "$IDENTITY_TYPE" == "user-assigned" ]]; then
     --resource-group "$RG_MAIN" \
     --query id -o tsv \
     --only-show-errors)
+  [[ -n "$IDENTITY_RESOURCE_ID" ]] || { error "Failed to retrieve resource ID for identity '${IDENTITY_NAME}'."; exit 1; }
 
   IDENTITY_PRINCIPAL_ID=$(az identity show \
     --name "$IDENTITY_NAME" \
     --resource-group "$RG_MAIN" \
     --query principalId -o tsv \
     --only-show-errors)
+  [[ -n "$IDENTITY_PRINCIPAL_ID" ]] || { error "Failed to retrieve principal ID for identity '${IDENTITY_NAME}'."; exit 1; }
 
   success "Created identity: ${IDENTITY_NAME}"
 
@@ -644,12 +670,22 @@ ENTRA_GROUP_ID=""
 if [[ "$ENTRA_ADMIN_ENABLED" == "true" ]]; then
   header "Creating Entra Admin Group"
 
-  info "Creating Entra group: ${ENTRA_GROUP_NAME}"
-  ENTRA_GROUP_ID=$(az ad group create \
-    --display-name "$ENTRA_GROUP_NAME" \
-    --mail-nickname "$ENTRA_GROUP_NAME" \
-    --query id -o tsv)
-  success "Created group: ${ENTRA_GROUP_NAME} (${ENTRA_GROUP_ID})"
+  info "Checking for existing Entra group: ${ENTRA_GROUP_NAME}"
+  ENTRA_GROUP_ID=$(az ad group list \
+    --filter "displayName eq '${ENTRA_GROUP_NAME}'" \
+    --query "[0].id" -o tsv 2>/dev/null || true)
+
+  if [[ -n "$ENTRA_GROUP_ID" ]]; then
+    warn "Entra group '${ENTRA_GROUP_NAME}' already exists — reusing (${ENTRA_GROUP_ID})."
+  else
+    info "Creating Entra group: ${ENTRA_GROUP_NAME}"
+    ENTRA_GROUP_ID=$(az ad group create \
+      --display-name "$ENTRA_GROUP_NAME" \
+      --mail-nickname "$ENTRA_GROUP_NAME" \
+      --query id -o tsv)
+    [[ -n "$ENTRA_GROUP_ID" ]] || { error "Failed to create Entra group '${ENTRA_GROUP_NAME}'."; exit 1; }
+    success "Created group: ${ENTRA_GROUP_NAME} (${ENTRA_GROUP_ID})"
+  fi
 
   info "Adding current user to group..."
   ALREADY_MEMBER=$(az ad group member check \
@@ -694,6 +730,7 @@ if [[ "$NETWORK_CONFIG" != "managed-network" ]]; then
         subnetName="$SUBNET_NAME" \
         location="$LOCATION" \
     --query "properties.outputs.subnetId.value" -o tsv)
+  [[ -n "$SUBNET_ID" ]] || { error "Failed to retrieve subnet ID from network deployment."; exit 1; }
 
   # For private-network, the KV private endpoint needs the VNet ID for DNS zone linking.
   VNET_ID=""
@@ -703,9 +740,34 @@ if [[ "$NETWORK_CONFIG" != "managed-network" ]]; then
       --resource-group "$RG_INFRA" \
       --query id -o tsv \
       --only-show-errors)
+    [[ -n "$VNET_ID" ]] || { error "Failed to retrieve VNet ID for '${VNET_NAME}'."; exit 1; }
   fi
 
   success "VNet and subnet ready: ${VNET_NAME} / ${SUBNET_NAME}"
+fi
+
+# -----------------------------------------------------------------------------
+# Key Vault soft-delete check
+# -----------------------------------------------------------------------------
+# Azure retains deleted vaults for 7 days (soft-delete). Recreating a vault
+# with the same name in the same region is blocked until it is purged.
+
+DELETED_KV=$(az keyvault list-deleted \
+  --query "[?name=='${KV_NAME}'].name" -o tsv 2>/dev/null || true)
+
+if [[ -n "$DELETED_KV" ]]; then
+  warn "Key Vault '${KV_NAME}' is in a soft-deleted state."
+  warn "It was previously deleted and is within the 7-day retention window."
+  echo ""
+  if confirm "Purge the deleted vault now to allow redeployment?"; then
+    info "Purging deleted Key Vault: ${KV_NAME}..."
+    az keyvault purge --name "$KV_NAME" --location "$LOCATION"
+    success "Key Vault purged: ${KV_NAME}"
+  else
+    error "Deployment cannot proceed while a deleted vault with this name exists."
+    error "Run manually: az keyvault purge --name \"${KV_NAME}\" --location \"${LOCATION}\""
+    exit 1
+  fi
 fi
 
 # -----------------------------------------------------------------------------
@@ -800,7 +862,7 @@ cat <<EOF
 
   ${BOLD}Cluster:${RESET}        ${CLUSTER_NAME}
   ${BOLD}Key Vault:${RESET}      ${KV_NAME}
-  ${BOLD}Config:${RESET}         ${NETWORK_CONFIG}
+  ${BOLD}Config:${RESET}         ${NETWORK_CONFIG} — ${NETWORK_CONFIG_DESC}
   ${BOLD}Resource group:${RESET} ${RG_MAIN}
 EOF
 
