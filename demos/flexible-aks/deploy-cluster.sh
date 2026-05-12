@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -x
+#set -x
 set -euo pipefail
 
 # =============================================================================
@@ -41,12 +41,12 @@ BICEP_DIR="${SCRIPT_DIR}/bicep"
 # Helpers
 # -----------------------------------------------------------------------------
 
-RED='\033[0;31m'
-YELLOW='\033[1;33m'
-GREEN='\033[0;32m'
-CYAN='\033[0;36m'
-BOLD='\033[1m'
-RESET='\033[0m'
+RED=$'\033[0;31m'
+YELLOW=$'\033[1;33m'
+GREEN=$'\033[0;32m'
+CYAN=$'\033[0;36m'
+BOLD=$'\033[1m'
+RESET=$'\033[0m'
 
 info()    { echo -e "${CYAN}${BOLD}→${RESET} $*"; }
 success() { echo -e "${GREEN}${BOLD}✓${RESET} $*"; }
@@ -198,8 +198,8 @@ if ! az account show &>/dev/null; then
   az login
 fi
 
-CURRENT_USER_UPN=$(az ad signed-in-user show --query userPrincipalName -o tsv 2>/dev/null || true)
-CURRENT_USER_ID=$(az ad signed-in-user show --query id -o tsv 2>/dev/null || true)
+CURRENT_USER_UPN=$(az ad signed-in-user show --query userPrincipalName -o tsv 2>/dev/null | tr -d '\r' || true)
+CURRENT_USER_ID=$(az ad signed-in-user show --query id -o tsv 2>/dev/null | tr -d '\r' || true)
 
 if [[ -z "$CURRENT_USER_UPN" ]] || [[ -z "$CURRENT_USER_ID" ]]; then
   error "Could not determine the logged-in user. Ensure your account has Azure AD read permissions."
@@ -218,7 +218,7 @@ if [[ -n "${SUBSCRIPTION_ID:-}" ]]; then
   info "Fetching subscription details..."
   SUBSCRIPTION_NAME=$(az account show \
     --subscription "$SUBSCRIPTION_ID" \
-    --query name -o tsv --only-show-errors 2>/dev/null || true)
+    --query name -o tsv --only-show-errors 2>/dev/null | tr -d '\r' || true)
   if [[ -z "$SUBSCRIPTION_NAME" ]]; then
     error "Subscription '${SUBSCRIPTION_ID}' not found or not accessible."
     exit 1
@@ -227,8 +227,8 @@ if [[ -n "${SUBSCRIPTION_ID:-}" ]]; then
   from_params "Subscription" "${SUBSCRIPTION_NAME} (${SUBSCRIPTION_ID})"
 else
   info "Fetching available subscriptions..."
-  mapfile -t SUB_NAMES < <(az account list --query "[?state=='Enabled'].name" -o tsv)
-  mapfile -t SUB_IDS   < <(az account list --query "[?state=='Enabled'].id"   -o tsv)
+  mapfile -t SUB_NAMES < <(az account list --query "[?state=='Enabled'].name" -o tsv | tr -d '\r')
+  mapfile -t SUB_IDS   < <(az account list --query "[?state=='Enabled'].id"   -o tsv | tr -d '\r')
 
   if [[ ${#SUB_NAMES[@]} -eq 0 ]]; then
     error "No subscriptions found for the current login."
@@ -264,7 +264,7 @@ fi
 
 info "Validating region..."
 VALID_LOCATION=$(az account list-locations \
-  --query "[?name=='${LOCATION}'].name" -o tsv --only-show-errors 2>/dev/null || true)
+  --query "[?name=='${LOCATION}'].name" -o tsv --only-show-errors 2>/dev/null | tr -d '\r' || true)
 if [[ -z "$VALID_LOCATION" ]]; then
   error "Region '${LOCATION}' is not a valid Azure region for this subscription."
   info "Run: az account list-locations --query \"[].name\" -o tsv"
@@ -640,20 +640,20 @@ if [[ "$IDENTITY_TYPE" == "user-assigned" ]]; then
     --name "$IDENTITY_NAME" \
     --resource-group "$RG_MAIN" \
     --query id -o tsv \
-    --only-show-errors)
+    --only-show-errors | tr -d '\r')
   [[ -n "$IDENTITY_RESOURCE_ID" ]] || { error "Failed to retrieve resource ID for identity '${IDENTITY_NAME}'."; exit 1; }
 
   IDENTITY_PRINCIPAL_ID=$(az identity show \
     --name "$IDENTITY_NAME" \
     --resource-group "$RG_MAIN" \
     --query principalId -o tsv \
-    --only-show-errors)
+    --only-show-errors | tr -d '\r')
   [[ -n "$IDENTITY_PRINCIPAL_ID" ]] || { error "Failed to retrieve principal ID for identity '${IDENTITY_NAME}'."; exit 1; }
 
   success "Created identity: ${IDENTITY_NAME}"
 
   info "Assigning Managed Identity Operator to current user..."
-  az role assignment create \
+  MSYS_NO_PATHCONV=1 az role assignment create \
     --assignee "$CURRENT_USER_ID" \
     --role "Managed Identity Operator" \
     --scope "$IDENTITY_RESOURCE_ID" \
@@ -673,7 +673,7 @@ if [[ "$ENTRA_ADMIN_ENABLED" == "true" ]]; then
   info "Checking for existing Entra group: ${ENTRA_GROUP_NAME}"
   ENTRA_GROUP_ID=$(az ad group list \
     --filter "displayName eq '${ENTRA_GROUP_NAME}'" \
-    --query "[0].id" -o tsv 2>/dev/null || true)
+    --query "[0].id" -o tsv 2>/dev/null | tr -d '\r' || true)
 
   if [[ -n "$ENTRA_GROUP_ID" ]]; then
     warn "Entra group '${ENTRA_GROUP_NAME}' already exists — reusing (${ENTRA_GROUP_ID})."
@@ -682,7 +682,7 @@ if [[ "$ENTRA_ADMIN_ENABLED" == "true" ]]; then
     ENTRA_GROUP_ID=$(az ad group create \
       --display-name "$ENTRA_GROUP_NAME" \
       --mail-nickname "$ENTRA_GROUP_NAME" \
-      --query id -o tsv)
+      --query id -o tsv | tr -d '\r')
     [[ -n "$ENTRA_GROUP_ID" ]] || { error "Failed to create Entra group '${ENTRA_GROUP_NAME}'."; exit 1; }
     success "Created group: ${ENTRA_GROUP_NAME} (${ENTRA_GROUP_ID})"
   fi
@@ -691,7 +691,7 @@ if [[ "$ENTRA_ADMIN_ENABLED" == "true" ]]; then
   ALREADY_MEMBER=$(az ad group member check \
     --group "$ENTRA_GROUP_ID" \
     --member-id "$CURRENT_USER_ID" \
-    --query value -o tsv 2>/dev/null || echo "false")
+    --query value -o tsv 2>/dev/null | tr -d '\r' || echo "false")
 
   if [[ "$ALREADY_MEMBER" == "true" ]]; then
     success "${CURRENT_USER_UPN} is already a member of ${ENTRA_GROUP_NAME} — skipping."
@@ -721,16 +721,27 @@ fi
 if [[ "$NETWORK_CONFIG" != "managed-network" ]]; then
   header "Provisioning Network"
 
-  info "Deploying VNet and subnet into ${RG_INFRA}..."
-  SUBNET_ID=$(az deployment group create \
+  SUBNET_ID=$(az network vnet subnet show \
     --resource-group "$RG_INFRA" \
-    --template-file "${BICEP_DIR}/modules/network.bicep" \
-    --parameters \
-        vnetName="$VNET_NAME" \
-        subnetName="$SUBNET_NAME" \
-        location="$LOCATION" \
-    --query "properties.outputs.subnetId.value" -o tsv)
-  [[ -n "$SUBNET_ID" ]] || { error "Failed to retrieve subnet ID from network deployment."; exit 1; }
+    --vnet-name "$VNET_NAME" \
+    --name "$SUBNET_NAME" \
+    --query id -o tsv --only-show-errors 2>/dev/null | tr -d '\r' || true)
+
+  if [[ -n "$SUBNET_ID" ]]; then
+    warn "Subnet '${SUBNET_NAME}' already exists — skipping network deployment. Existing network configuration was not changed."
+  else
+    info "Deploying VNet and subnet into ${RG_INFRA}..."
+    SUBNET_ID=$(az deployment group create \
+      --resource-group "$RG_INFRA" \
+      --template-file "${BICEP_DIR}/modules/network.bicep" \
+      --parameters \
+          vnetName="$VNET_NAME" \
+          subnetName="$SUBNET_NAME" \
+          location="$LOCATION" \
+      --query "properties.outputs.subnetId.value" -o tsv \
+      --only-show-errors | tr -d '\r')
+    [[ -n "$SUBNET_ID" ]] || { error "Failed to retrieve subnet ID from network deployment."; exit 1; }
+  fi
 
   # For private-network, the KV private endpoint needs the VNet ID for DNS zone linking.
   VNET_ID=""
@@ -739,7 +750,7 @@ if [[ "$NETWORK_CONFIG" != "managed-network" ]]; then
       --name "$VNET_NAME" \
       --resource-group "$RG_INFRA" \
       --query id -o tsv \
-      --only-show-errors)
+      --only-show-errors | tr -d '\r')
     [[ -n "$VNET_ID" ]] || { error "Failed to retrieve VNet ID for '${VNET_NAME}'."; exit 1; }
   fi
 
@@ -753,7 +764,7 @@ fi
 # with the same name in the same region is blocked until it is purged.
 
 DELETED_KV=$(az keyvault list-deleted \
-  --query "[?name=='${KV_NAME}'].name" -o tsv 2>/dev/null || true)
+  --query "[?name=='${KV_NAME}'].name" -o tsv 2>/dev/null | tr -d '\r' || true)
 
 if [[ -n "$DELETED_KV" ]]; then
   warn "Key Vault '${KV_NAME}' is in a soft-deleted state."
@@ -775,6 +786,20 @@ fi
 # -----------------------------------------------------------------------------
 
 header "Deploying AKS Cluster"
+
+if [[ "$NETWORK_CONFIG" != "managed-network" ]]; then
+  info "Subnet ID: '${SUBNET_ID}'"
+  info "Verifying subnet is accessible..."
+  az network vnet subnet show \
+    --resource-group "$RG_INFRA" \
+    --vnet-name "$VNET_NAME" \
+    --name "$SUBNET_NAME" \
+    --only-show-errors -o none || {
+    error "Subnet not found or not accessible: ${SUBNET_ID}"
+    exit 1
+  }
+  success "Subnet verified."
+fi
 
 info "Deploying cluster: ${CLUSTER_NAME} — this may take 5–10 minutes..."
 
@@ -817,9 +842,18 @@ if [[ "$NETWORK_CONFIG" == "private-network" ]]; then
   BICEP_PARAMS+=(vnetId="$VNET_ID")
 fi
 
-az deployment group create \
+# Git Bash (MSYS2) auto-converts arguments that look like POSIX paths
+# (e.g. /subscriptions/…) to Windows paths, corrupting Azure resource IDs
+# passed as --parameters values. MSYS_NO_PATHCONV=1 disables this for the
+# az call; cygpath pre-converts the template file path so az can still find it.
+_AKS_TEMPLATE="${BICEP_DIR}/main.bicep"
+if command -v cygpath &>/dev/null; then
+  _AKS_TEMPLATE="$(cygpath -w "$_AKS_TEMPLATE")"
+fi
+
+MSYS_NO_PATHCONV=1 az deployment group create \
   --resource-group "$RG_MAIN" \
-  --template-file "${BICEP_DIR}/main.bicep" \
+  --template-file "$_AKS_TEMPLATE" \
   --parameters "${BICEP_PARAMS[@]}" \
   --output none
 

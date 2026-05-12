@@ -69,30 +69,52 @@ var identityObject = identityType == 'UserAssigned' ? {
 // Agent pool profile
 // ---------------------------------------------------------------------------
 
-var agentPoolProfile = {
-  name:   'system'
-  mode:   'System'
-  count:   nodeCount
-  vmSize:  nodeVmSku
-  osType: 'Linux'
-  osDiskType: 'Managed'
-  // Attach to customer subnet when provided
-  vnetSubnetID: !empty(subnetId) ? subnetId : null
-}
+// Two fully-typed array literals so the ARM property compiles to a single
+// top-level expression rather than a literal array with an expression element.
+// vnetSubnetID is only present (and never null) when a subnet ID is provided.
+var agentPoolProfiles = !empty(subnetId) ? [
+  {
+    name:         'system'
+    mode:         'System'
+    count:        nodeCount
+    vmSize:       nodeVmSku
+    osType:       'Linux'
+    osDiskType:   'Managed'
+    vnetSubnetID: subnetId
+  }
+] : [
+  {
+    name:       'system'
+    mode:       'System'
+    count:      nodeCount
+    vmSize:     nodeVmSku
+    osType:     'Linux'
+    osDiskType: 'Managed'
+  }
+]
 
 // ---------------------------------------------------------------------------
 // Network profile
 // ---------------------------------------------------------------------------
 
+// Service and pod CIDRs are set explicitly to avoid overlap with the VNet
+// address space (10.0.0.0/8). AKS rejects configurations where the default
+// service CIDR (10.0.0.0/16) or pod CIDR (10.244.0.0/16) falls inside the VNet.
 var networkProfile = networkPluginMode == 'overlay' ? {
   networkPlugin:     networkPlugin
   networkPluginMode: 'overlay'
   networkPolicy:     networkPolicy
   networkDataplane:  networkPolicy == 'cilium' ? 'cilium' : 'azure'
+  podCidr:           '192.168.0.0/16'
+  serviceCidr:       '172.16.0.0/16'
+  dnsServiceIP:      '172.16.0.10'
 } : {
   // networkPolicy intentionally omitted for kubenet — Azure Network Policy and
   // Cilium both require Azure CNI Overlay. Kubenet uses its own UDR-based routing.
   networkPlugin: networkPlugin
+  podCidr:       '192.168.0.0/16'
+  serviceCidr:   '172.16.0.0/16'
+  dnsServiceIP:  '172.16.0.10'
 }
 
 // ---------------------------------------------------------------------------
@@ -127,7 +149,7 @@ resource aksCluster 'Microsoft.ContainerService/managedClusters@2024-09-01' = {
   properties: {
     dnsPrefix:   clusterName
     networkProfile: networkProfile
-    agentPoolProfiles: [agentPoolProfile]
+    agentPoolProfiles: agentPoolProfiles
     // Entra auth (null = disabled, object = enabled)
     aadProfile: aadProfile
 
