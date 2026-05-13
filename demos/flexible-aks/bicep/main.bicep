@@ -67,6 +67,9 @@ param vnetId string = ''
 @description('Name of the Azure Container Registry. Alphanumeric only, 5–50 chars.')
 param acrName string
 
+@description('Name of the user-assigned managed identity for application workloads (AKS Workload Identity).')
+param appIdentityName string
+
 // ---------------------------------------------------------------------------
 // Derived values
 // ---------------------------------------------------------------------------
@@ -131,6 +134,23 @@ module keyvault './modules/keyvault.bicep' = {
 }
 
 // ---------------------------------------------------------------------------
+// Application workload identity
+// ---------------------------------------------------------------------------
+// A dedicated user-assigned identity for app pods. Workload Identity federates
+// K8s service account tokens against this identity's OIDC trust so pods can
+// authenticate to Azure services (e.g. PostgreSQL) without embedded credentials.
+// The federated credential is created separately once the namespace and service
+// account name are known.
+
+module appIdentity './modules/identity.bicep' = {
+  name: 'app-identity'
+  params: {
+    identityName: appIdentityName
+    location:     location
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Container Registry module
 // ---------------------------------------------------------------------------
 
@@ -143,7 +163,6 @@ module acr './modules/acr.bicep' = {
     subnetId:                 effectiveSubnetId
     vnetId:                   vnetId
     deployingUserPrincipalId: deployingUserPrincipalId
-    kubeletIdentityObjectId:  cluster.outputs.kubeletIdentityObjectId
   }
 }
 
@@ -151,10 +170,14 @@ module acr './modules/acr.bicep' = {
 // Outputs
 // ---------------------------------------------------------------------------
 
-output clusterName       string = cluster.outputs.clusterName
-output clusterFqdn       string = cluster.outputs.clusterFqdn
-output nodeResourceGroup string = cluster.outputs.nodeResourceGroup
-output kvName            string = keyvault.outputs.kvName
-output kvUri             string = keyvault.outputs.kvUri
-output acrName           string = acr.outputs.acrName
-output acrLoginServer    string = acr.outputs.acrLoginServer
+output clusterName            string = cluster.outputs.clusterName
+output clusterFqdn            string = cluster.outputs.clusterFqdn
+output nodeResourceGroup      string = cluster.outputs.nodeResourceGroup
+output kvName                 string = keyvault.outputs.kvName
+output kvUri                  string = keyvault.outputs.kvUri
+output acrName                string = acr.outputs.acrName
+output acrLoginServer         string = acr.outputs.acrLoginServer
+output oidcIssuerUrl          string = cluster.outputs.oidcIssuerUrl
+output appIdentityName        string = appIdentity.outputs.identityName
+output appIdentityClientId    string = appIdentity.outputs.identityClientId
+output appIdentityPrincipalId string = appIdentity.outputs.identityPrincipalId

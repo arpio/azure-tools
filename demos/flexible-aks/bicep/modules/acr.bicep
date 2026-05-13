@@ -3,7 +3,11 @@
 // =============================================================================
 // Creates an Azure Container Registry with RBAC authorization. Grants:
 //   AcrPush → deploying user
-//   AcrPull → cluster kubelet identity (the identity that pulls images on nodes)
+//
+// AcrPull for the cluster's kubelet identity is wired separately via
+// `az aks update --attach-acr` in deploy-cluster.sh, because the kubelet
+// identity lives in the MC_ resource group and is only resolvable after the
+// cluster exists.
 //
 // For private-network: uses Premium SKU, disables public access, and provisions
 // a private endpoint with private DNS zone integration into the cluster VNet.
@@ -26,9 +30,6 @@ param vnetId string = ''
 
 @description('Object ID of the deploying user. Granted AcrPush.')
 param deployingUserPrincipalId string
-
-@description('Object ID of the cluster kubelet managed identity. Granted AcrPull.')
-param kubeletIdentityObjectId string
 
 // ---------------------------------------------------------------------------
 // Registry
@@ -61,23 +62,6 @@ resource acrPushAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' 
     )
     principalId:   deployingUserPrincipalId
     principalType: 'User'
-  }
-}
-
-// ---------------------------------------------------------------------------
-// RBAC: kubelet identity → AcrPull
-// ---------------------------------------------------------------------------
-
-resource acrPullAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name:  guid(acr.id, kubeletIdentityObjectId, 'acr-pull')
-  scope: acr
-  properties: {
-    roleDefinitionId: subscriptionResourceId(
-      'Microsoft.Authorization/roleDefinitions',
-      '7f951dda-4ed3-4680-a7ca-43fe172d538d' // AcrPull
-    )
-    principalId:   kubeletIdentityObjectId
-    principalType: 'ServicePrincipal'
   }
 }
 

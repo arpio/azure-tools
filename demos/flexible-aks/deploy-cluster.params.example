@@ -61,6 +61,6 @@
 # Number of nodes in the system node pool (positive integer).
 #NODE_COUNT="2"
 
-# Note: the Container Registry name is derived automatically from the prefix
-# and suffix — no parameter is needed. The registry is always created as part
-# of the deployment.
+# Note: the Container Registry and app workload identity names are derived
+# automatically from the prefix and suffix — no parameters are needed.
+# Both are always created as part of the deployment.

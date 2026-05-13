@@ -117,9 +117,9 @@ confirm_yes() {
 }
 
 derive_suffix() {
-  # Deterministic 6-char suffix from prefix + subscription ID + username
+  # Deterministic 4-char suffix from prefix + subscription ID + username
   local raw="${1}${2}${3}"
-  echo -n "$raw" | openssl dgst -sha256 | awk '{print $2}' | cut -c1-6
+  echo -n "$raw" | openssl dgst -sha256 | awk '{print $2}' | cut -c1-4
 }
 
 # -----------------------------------------------------------------------------
@@ -493,17 +493,18 @@ CLUSTER_NAME="${PREFIX}-aks-${SUFFIX}"
 VNET_NAME="${PREFIX}-vnet-${SUFFIX}"
 SUBNET_NAME="${PREFIX}-subnet-${SUFFIX}"
 IDENTITY_NAME="${PREFIX}-id-${SUFFIX}"
+APP_IDENTITY_NAME="${PREFIX}-app-id-${SUFFIX}"
 ENTRA_GROUP_NAME="${PREFIX}-admins-${SUFFIX}"
 
 # Key Vault: max 24 chars, must start with a letter.
-# Truncate prefix to 14 chars to leave room for -kv-{6char suffix}.
-KV_PREFIX="${PREFIX:0:14}"
+# Truncate prefix to 16 chars to leave room for -kv-{4char suffix}.
+KV_PREFIX="${PREFIX:0:16}"
 KV_PREFIX="${KV_PREFIX%-}"   # strip trailing hyphen if truncation left one
 KV_NAME="${KV_PREFIX}-kv-${SUFFIX}"
 
 # ACR: alphanumeric only, no hyphens. Prefix already satisfies this constraint.
-# Truncate prefix to 37 chars to leave room for acr + 6-char suffix (max 50 total).
-ACR_PREFIX="${PREFIX:0:37}"
+# Truncate prefix to 43 chars to leave room for acr + 4-char suffix (max 50 total).
+ACR_PREFIX="${PREFIX:0:43}"
 ACR_NAME="${ACR_PREFIX}acr${SUFFIX}"
 
 echo ""
@@ -518,6 +519,7 @@ fi
 echo "  Cluster:           ${CLUSTER_NAME}"
 echo "  Key Vault:         ${KV_NAME}"
 echo "  Container Registry:${ACR_NAME}"
+echo "  App Identity:      ${APP_IDENTITY_NAME}"
 if [[ "$IDENTITY_TYPE" == "user-assigned" ]]; then
   echo "  Managed Identity:  ${IDENTITY_NAME}"
 fi
@@ -590,6 +592,7 @@ cat <<EOF
   ${BOLD}Cluster:${RESET}            ${CLUSTER_NAME}
   ${BOLD}Key Vault:${RESET}          ${KV_NAME}
   ${BOLD}Container Registry:${RESET} ${ACR_NAME}
+  ${BOLD}App Identity:${RESET}       ${APP_IDENTITY_NAME}
   ${BOLD}Node pool:${RESET}          ${NODE_COUNT}x ${VM_SKU}
 EOF
 
@@ -843,6 +846,7 @@ fi
 BICEP_PARAMS+=(
   kvName="$KV_NAME"
   acrName="$ACR_NAME"
+  appIdentityName="$APP_IDENTITY_NAME"
   deployingUserPrincipalId="$CURRENT_USER_ID"
 )
 
@@ -866,6 +870,44 @@ MSYS_NO_PATHCONV=1 az deployment group create \
   --output none
 
 success "Cluster deployed: ${CLUSTER_NAME}"
+
+# -----------------------------------------------------------------------------
+# ACR integration + workload identity webhook
+# -----------------------------------------------------------------------------
+# Both --attach-acr and --enable-workload-identity are run as explicit az aks
+# update calls after the Bicep deployment. The Bicep sets the flags, but on
+# existing clusters the workload identity webhook only gets reconciled when an
+# update cycle is triggered via the CLI.
+
+info "Granting cluster pull access to registry: ${ACR_NAME}"
+az aks update \
+  --resource-group "$RG_MAIN" \
+  --name "$CLUSTER_NAME" \
+  --attach-acr "$ACR_NAME" \
+  --enable-oidc-issuer \
+  --enable-workload-identity \
+  --output none
+success "AcrPull granted and workload identity webhook reconciled."
+
+# -----------------------------------------------------------------------------
+# Workload identity outputs
+# -----------------------------------------------------------------------------
+
+info "Retrieving workload identity details..."
+OIDC_ISSUER_URL=$(az aks show \
+  --resource-group "$RG_MAIN" \
+  --name "$CLUSTER_NAME" \
+  --query "oidcIssuerProfile.issuerUrl" -o tsv | tr -d '\r')
+
+APP_IDENTITY_CLIENT_ID=$(az identity show \
+  --resource-group "$RG_MAIN" \
+  --name "$APP_IDENTITY_NAME" \
+  --query clientId -o tsv | tr -d '\r')
+
+APP_IDENTITY_PRINCIPAL_ID=$(az identity show \
+  --resource-group "$RG_MAIN" \
+  --name "$APP_IDENTITY_NAME" \
+  --query principalId -o tsv | tr -d '\r')
 
 # -----------------------------------------------------------------------------
 # kubeconfig
@@ -907,6 +949,30 @@ cat <<EOF
   ${BOLD}Key Vault:${RESET}      ${KV_NAME}
   ${BOLD}Config:${RESET}         ${NETWORK_CONFIG} — ${NETWORK_CONFIG_DESC}
   ${BOLD}Resource group:${RESET} ${RG_MAIN}
+
+  ${BOLD}${CYAN}Workload Identity (for app pods connecting to Azure services):${RESET}
+  ${BOLD}Identity name:${RESET}     ${APP_IDENTITY_NAME}
+  ${BOLD}Client ID:${RESET}         ${APP_IDENTITY_CLIENT_ID}
+  ${BOLD}Principal ID:${RESET}      ${APP_IDENTITY_PRINCIPAL_ID}
+  ${BOLD}OIDC issuer URL:${RESET}   ${OIDC_ISSUER_URL}
+
+  Once you know your app's Kubernetes namespace and service account name,
+  create the federated credential to complete the trust:
+
+    az identity federated-credential create \\
+      --name app-federated-cred \\
+      --identity-name "${APP_IDENTITY_NAME}" \\
+      --resource-group "${RG_MAIN}" \\
+      --issuer "${OIDC_ISSUER_URL}" \\
+      --subject "system:serviceaccount:<namespace>:<service-account>" \\
+      --audience api://AzureADTokenExchange
+
+  Then annotate your Kubernetes service account:
+
+    kubectl annotate serviceaccount <service-account> \\
+      --namespace <namespace> \\
+      azure.workload.identity/client-id=${APP_IDENTITY_CLIENT_ID}
+
 EOF
 
 if [[ "$NETWORK_CONFIG" != "managed-network" ]]; then

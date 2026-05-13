@@ -162,6 +162,17 @@ resource aksCluster 'Microsoft.ContainerService/managedClusters@2024-09-01' = {
 
     // Disable local accounts when using Entra (security best practice)
     disableLocalAccounts: enableEntraAuth
+
+    // Required for AKS Workload Identity — pods exchange K8s service account
+    // tokens for Azure managed identity tokens via the OIDC issuer endpoint.
+    oidcIssuerProfile: {
+      enabled: true
+    }
+    securityProfile: {
+      workloadIdentity: {
+        enabled: true
+      }
+    }
   }
 }
 
@@ -175,3 +186,4 @@ output nodeResourceGroup       string = aksCluster.properties.nodeResourceGroup
 output kubeletIdentityObjectId string = aksCluster.properties.identityProfile.kubeletidentity.objectId
 // Empty string for UserAssigned clusters; main.bicep uses clusterIdentityPrincipalId param instead.
 output clusterPrincipalId      string = aksCluster.identity.principalId
+output oidcIssuerUrl           string = aksCluster.properties.oidcIssuerProfile.issuerURL

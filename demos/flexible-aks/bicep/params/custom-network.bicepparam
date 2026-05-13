@@ -24,5 +24,6 @@ param nodeCount             = 2
 // param userAssignedIdentityId
 // param kvName
 // param acrName
+// param appIdentityName
 // param deployingUserPrincipalId
 // param clusterIdentityPrincipalId  (UserAssigned only)
