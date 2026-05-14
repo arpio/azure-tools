@@ -8,11 +8,11 @@ Interactive deployment script for standing up AKS clusters in three network conf
 
 The script walks through an interactive prompt flow and deploys an AKS cluster using a combination of Azure CLI and Bicep. Three configurations are supported, covering the range from fully Azure-managed networking to fully private, customer-controlled networking.
 
-| Configuration | API Endpoint | VNet | API Server VNet Integration | Arpio Delegate |
-|---|---|---|---|---|
-| `managed-network` | Public | Azure-managed | Yes | Public |
-| `custom-network` | Public | Script-created | No | Public |
-| `private-network` | Private | Script-created | No | Private |
+| Configuration | API Endpoint | VNet | API Server VNet Integration | Arpio Delegate | kubectl from laptop |
+|---|---|---|---|---|---|
+| `managed-network` | Public | Azure-managed | Yes | Public | Direct |
+| `custom-network` | Public | Script-created | No | Public | Direct |
+| `private-network` | Private | Script-created | No | Private | `az aks command invoke` |
 
 **Arpio delegate note:** The script does not deploy the Arpio delegate. For `private-network` clusters, a private delegate must be installed inside the cluster VNet after deployment.
 
@@ -268,6 +268,52 @@ The script deploys an Azure Container Registry (`{prefix}acr{suffix}`) in the ma
 - After cluster creation, the script runs `az aks update --attach-acr` to grant the cluster's kubelet identity **AcrPull** — pods can pull images without embedded credentials
 
 For `private-network` clusters, public network access is disabled and a private endpoint with private DNS zone integration (`privatelink.azurecr.io`) is provisioned into the cluster VNet.
+
+---
+
+## Connecting to a Private Cluster
+
+For `private-network` clusters the Kubernetes API server has no public endpoint. Direct `kubectl` commands from outside the VNet will fail. Use `az aks command invoke` to proxy commands through the Azure control plane — no VPN or network access to the VNet required.
+
+### Running kubectl commands
+
+```bash
+az aks command invoke \
+  --resource-group <resource-group> \
+  --name <cluster-name> \
+  --command "kubectl get nodes"
+```
+
+### Deploying workloads
+
+Pass manifest files using `--file`. The file is uploaded alongside the command and is available in the working directory when the command runs inside the cluster:
+
+```bash
+az aks command invoke \
+  --resource-group <resource-group> \
+  --name <cluster-name> \
+  --command "kubectl apply -f manifest.yaml" \
+  --file manifest.yaml
+```
+
+Multiple files can be passed with repeated `--file` flags:
+
+```bash
+az aks command invoke \
+  --resource-group <resource-group> \
+  --name <cluster-name> \
+  --command "kubectl apply -f deployment.yaml -f service.yaml" \
+  --file deployment.yaml \
+  --file service.yaml
+```
+
+### Limitations
+
+- Log streaming (`kubectl logs -f`), interactive exec (`kubectl exec -it`), and port forwarding (`kubectl port-forward`) are not supported — these require a persistent bidirectional connection to the API server.
+- Each invocation has a timeout of approximately 10 minutes.
+- Requires `Microsoft.ContainerService/managedClusters/runcommand/action` on the cluster. This is included in the `Azure Kubernetes Service Cluster User` and `Azure Kubernetes Service Cluster Admin` built-in roles.
+
+For interactive access (log streaming, exec, port-forward), connect via VPN or use a jump host deployed inside the cluster VNet.
 
 ---
 

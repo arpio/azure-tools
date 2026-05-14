@@ -932,7 +932,12 @@ else
   info "kubeconfig uses cluster admin certificate — no Entra dependency."
 fi
 
-success "kubeconfig updated. Cluster context: ${CLUSTER_NAME}"
+success "kubeconfig saved. Cluster context: ${CLUSTER_NAME}"
+
+if [[ "$NETWORK_CONFIG" == "private-network" ]]; then
+  warn "Private cluster: the API server endpoint is private — kubectl will not work outside the VNet."
+  info "Use 'az aks command invoke' to run kubectl from outside the VNet (see deployment summary)."
+fi
 
 # -----------------------------------------------------------------------------
 # Done
@@ -980,12 +985,37 @@ if [[ "$NETWORK_CONFIG" != "managed-network" ]]; then
 fi
 
 if [[ "$NETWORK_CONFIG" == "private-network" ]]; then
-  echo ""
-  warn "This is a private cluster. Install the Arpio private delegate inside the cluster VNet."
-  warn "The public Arpio delegate cannot reach private API endpoints."
-  warn "Key Vault public access is disabled — manage secrets from within the cluster VNet."
-fi
+  cat <<PRIVATE_EOF
 
-echo ""
-info "Test connectivity:  kubectl get nodes"
+  ${YELLOW}${BOLD}Private Cluster — Accessing from Outside the VNet${RESET}
+
+  The API server has no public endpoint. Use 'az aks command invoke' to run
+  kubectl commands through the Azure control plane — no VPN required:
+
+    az aks command invoke \\
+      --resource-group "${RG_MAIN}" \\
+      --name "${CLUSTER_NAME}" \\
+      --command "kubectl get nodes"
+
+  To apply a manifest, pass the file with --file:
+
+    az aks command invoke \\
+      --resource-group "${RG_MAIN}" \\
+      --name "${CLUSTER_NAME}" \\
+      --command "kubectl apply -f manifest.yaml" \\
+      --file manifest.yaml
+
+  Limitation: log streaming, exec, and port-forward are not supported via this path.
+  For interactive access, connect via VPN or use a jump host inside the VNet.
+
+  ${YELLOW}Other private-network notes:${RESET}
+  • Install the Arpio private delegate inside the cluster VNet.
+    The public Arpio delegate cannot reach private API endpoints.
+  • Key Vault public access is disabled — manage secrets from within the VNet.
+
+PRIVATE_EOF
+else
+  echo ""
+  info "Test connectivity:  kubectl get nodes"
+fi
 echo ""
