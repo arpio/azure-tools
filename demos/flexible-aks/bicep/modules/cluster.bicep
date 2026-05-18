@@ -29,8 +29,8 @@ param subnetId string = ''
 @description('Whether this is a private cluster (no public API endpoint).')
 param isPrivate bool = false
 
-@description('Enable API server VNet integration (managed-network only).')
-param enableApiServerVnetInt bool = false
+@description('Disable the run command on the API server (set true for private clusters).')
+param disableRunCommand bool = false
 
 @description('Enable Entra ID authentication.')
 param enableEntraAuth bool = true
@@ -122,7 +122,9 @@ var networkProfile = networkPluginMode == 'overlay' ? {
 // ---------------------------------------------------------------------------
 
 var apiServerAccessProfile = {
-  enablePrivateCluster: isPrivate
+  enablePrivateCluster:              isPrivate
+  disableRunCommand:                 disableRunCommand
+  enablePrivateClusterPublicFQDN:    false
   // Public access is enabled by default when isPrivate is false.
   // When isPrivate is true, the API server is only accessible within the VNet.
 }
@@ -153,12 +155,8 @@ resource aksCluster 'Microsoft.ContainerService/managedClusters@2024-09-01' = {
     // Entra auth (null = disabled, object = enabled)
     aadProfile: aadProfile
 
-    // API server VNet integration (managed-network config only)
-    apiServerAccessProfile: enableApiServerVnetInt ? {
-      enablePrivateCluster:        false
-      enableVnetIntegration:       true
-      subnetId:                    subnetId
-    } : apiServerAccessProfile
+    // API server access profile (configured for VNet-only access when private)
+    apiServerAccessProfile: apiServerAccessProfile
 
     // Disable local accounts when using Entra (security best practice)
     disableLocalAccounts: enableEntraAuth

@@ -77,7 +77,6 @@ param appIdentityName string
 var isPrivate     = networkConfig == 'private-network'
 var isManagedNet  = networkConfig == 'managed-network'
 var enableEntra   = k8sAuth == 'entra'
-var enableVnetInt = isManagedNet  // API server VNet integration only for managed-network
 
 // For UserAssigned: caller passes the identity's principal ID (known before cluster creation).
 // For SystemAssigned: derive from cluster output after creation.
@@ -106,7 +105,6 @@ module cluster './modules/cluster.bicep' = {
     networkPolicy:          networkPolicy
     subnetId:               effectiveSubnetId
     isPrivate:              isPrivate
-    enableApiServerVnetInt: enableVnetInt
     enableEntraAuth:        enableEntra
     entraAdminGroupId:      entraAdminGroupId
     identityType:           identityType
