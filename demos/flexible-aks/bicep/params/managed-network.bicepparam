@@ -1,29 +1,42 @@
 // =============================================================================
-// managed-network configuration parameter defaults
+// managed-network configuration
 // =============================================================================
-// Azure-managed VNet, API server VNet integration, public API, public delegate.
-//
-// These are reference defaults. deploy-cluster.sh populates parameters
-// at runtime based on user input. Edit this file to override defaults
-// for your environment.
+// Azure-managed VNet, public API endpoint, public Arpio delegate.
+// See README.md in this directory for usage instructions.
 // =============================================================================
 
 using '../main.bicep'
+
+// ---------------------------------------------------------------------------
+// Required — fill in before deploying directly
+// ---------------------------------------------------------------------------
+
+param clusterName              = 'MY_CLUSTER_NAME'
+param kvName                   = 'MY_KV_NAME'
+param acrName                  = 'myacrname'
+param appIdentityName          = 'MY_APP_IDENTITY'
+param deployingUserPrincipalId = 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
+
+// ---------------------------------------------------------------------------
+// Network (pre-set for managed-network)
+// ---------------------------------------------------------------------------
 
 param networkConfig         = 'managed-network'
 param networkPlugin         = 'azure'
 param networkPluginMode     = 'overlay'
 param networkPolicy         = 'azure'          // or 'cilium'
+
+// ---------------------------------------------------------------------------
+// Auth and identity
+// ---------------------------------------------------------------------------
+
 param k8sAuth               = 'entra'
+// param entraAdminGroupId  = 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
 param identityType          = 'SystemAssigned'
+
+// ---------------------------------------------------------------------------
+// Node pool
+// ---------------------------------------------------------------------------
+
 param nodeVmSku             = 'Standard_D2s_v3'
 param nodeCount             = 2
-
-// Populated at runtime by deploy-cluster.sh:
-// param clusterName
-// param location
-// param entraAdminGroupId
-// param kvName
-// param acrName
-// param appIdentityName
-// param deployingUserPrincipalId
