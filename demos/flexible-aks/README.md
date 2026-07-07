@@ -20,6 +20,7 @@ The script walks through an interactive prompt flow and deploys an AKS cluster u
 
 ## Prerequisites
 
+- Bash `>= 4.0` — **macOS ships Bash 3.2 by default.** Install a newer version with `brew install bash` and run the script with it (e.g. `$(brew --prefix bash)/bin/bash ./deploy-cluster.sh`). Windows Git Bash and Linux distros already ship Bash 4+.
 - [Azure CLI](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli) `>= 2.56.0`
 - [Bicep CLI](https://learn.microsoft.com/en-us/azure/azure-resource-manager/bicep/install) `>= 0.25.0` (installed via `az bicep install`)
 - `openssl` (for suffix hash generation — available natively on Linux and macOS)
@@ -29,6 +30,7 @@ The script walks through an interactive prompt flow and deploys an AKS cluster u
 Verify your setup:
 
 ```bash
+bash --version
 az version
 az bicep version
 openssl version
@@ -168,6 +170,19 @@ Available for `custom-network` and `private-network` only.
 | `private-network` | ✅ | ✅ |
 
 The script enforces this constraint and explains it when prompting for the networking model.
+
+### VNet permissions (custom-network / private-network)
+
+Azure automatically grants the cluster identity network permissions when it
+manages the VNet itself (`managed-network`). For `custom-network` and
+`private-network`, the VNet is provisioned by this script, so the cluster
+identity needs to be granted access explicitly.
+
+The script assigns **Network Contributor** on the VNet to the cluster identity
+(system- or user-assigned) after the cluster is created. This lets the
+cluster manage the networking resources it needs at runtime — load balancer
+frontend IP configurations, private endpoint wiring, and (for Kubenet) route
+table entries.
 
 ---
 

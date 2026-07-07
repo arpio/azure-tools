@@ -2,6 +2,17 @@
 #set -x
 set -euo pipefail
 
+# Requires Bash 4+ (mapfile, etc.). macOS ships Bash 3.2 by default.
+if ((BASH_VERSINFO[0] < 4)); then
+  echo "Error: this script requires Bash 4.0 or newer (found ${BASH_VERSION})." >&2
+  echo "" >&2
+  echo "macOS ships Bash 3.2 by default. Install a newer version with Homebrew:" >&2
+  echo "    brew install bash" >&2
+  echo "Then re-run this script with it, e.g.:" >&2
+  echo "    \$(brew --prefix bash)/bin/bash ./deploy-cluster.sh" >&2
+  exit 1
+fi
+
 # =============================================================================
 # Arpio AKS Cluster Deployment Script
 # =============================================================================
@@ -753,16 +764,15 @@ if [[ "$NETWORK_CONFIG" != "managed-network" ]]; then
     [[ -n "$SUBNET_ID" ]] || { error "Failed to retrieve subnet ID from network deployment."; exit 1; }
   fi
 
-  # For private-network, the KV private endpoint needs the VNet ID for DNS zone linking.
-  VNET_ID=""
-  if [[ "$NETWORK_CONFIG" == "private-network" ]]; then
-    VNET_ID=$(az network vnet show \
-      --name "$VNET_NAME" \
-      --resource-group "$RG_INFRA" \
-      --query id -o tsv \
-      --only-show-errors | tr -d '\r')
-    [[ -n "$VNET_ID" ]] || { error "Failed to retrieve VNet ID for '${VNET_NAME}'."; exit 1; }
-  fi
+  # VNet ID is needed for the cluster's Network Contributor role assignment
+  # (custom-network and private-network) and for the KV private endpoint DNS
+  # zone linking (private-network only).
+  VNET_ID=$(az network vnet show \
+    --name "$VNET_NAME" \
+    --resource-group "$RG_INFRA" \
+    --query id -o tsv \
+    --only-show-errors | tr -d '\r')
+  [[ -n "$VNET_ID" ]] || { error "Failed to retrieve VNet ID for '${VNET_NAME}'."; exit 1; }
 
   success "VNet and subnet ready: ${VNET_NAME} / ${SUBNET_NAME}"
 fi
@@ -870,6 +880,37 @@ MSYS_NO_PATHCONV=1 az deployment group create \
   --output none
 
 success "Cluster deployed: ${CLUSTER_NAME}"
+
+# -----------------------------------------------------------------------------
+# Network Contributor (BYO VNet configs)
+# -----------------------------------------------------------------------------
+# The cluster identity needs Network Contributor on the VNet to manage network
+# resources it needs at runtime (LB frontend configs, private endpoints, kubenet
+# route tables). Azure only wires this up automatically for managed-network.
+
+if [[ "$NETWORK_CONFIG" != "managed-network" ]]; then
+  header "Granting Network Contributor on VNet"
+
+  if [[ "$IDENTITY_TYPE" == "user-assigned" ]]; then
+    CLUSTER_PRINCIPAL_ID="$IDENTITY_PRINCIPAL_ID"
+  else
+    CLUSTER_PRINCIPAL_ID=$(az aks show \
+      --resource-group "$RG_MAIN" \
+      --name "$CLUSTER_NAME" \
+      --query identity.principalId -o tsv \
+      --only-show-errors | tr -d '\r')
+    [[ -n "$CLUSTER_PRINCIPAL_ID" ]] || { error "Failed to retrieve cluster identity principal ID."; exit 1; }
+  fi
+
+  info "Assigning Network Contributor on ${VNET_NAME} to cluster identity..."
+  MSYS_NO_PATHCONV=1 az role assignment create \
+    --assignee-object-id "$CLUSTER_PRINCIPAL_ID" \
+    --assignee-principal-type ServicePrincipal \
+    --role "Network Contributor" \
+    --scope "$VNET_ID" \
+    --output none
+  success "Network Contributor granted on ${VNET_NAME} to the cluster identity."
+fi
 
 # -----------------------------------------------------------------------------
 # ACR integration + workload identity webhook

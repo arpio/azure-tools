@@ -1,0 +1,8 @@
+# Force LF line endings for scripts and IaC files regardless of platform
+# or local core.autocrlf settings. CRLF in a shell script breaks the
+# shebang line and can cause `$'\r': command not found` errors on Linux/macOS.
+* text=auto eol=lf
+
+*.sh text eol=lf
+*.bicep text eol=lf
+*.bicepparam text eol=lf

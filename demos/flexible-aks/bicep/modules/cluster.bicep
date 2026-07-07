@@ -183,5 +183,5 @@ output clusterFqdn             string = aksCluster.properties.fqdn
 output nodeResourceGroup       string = aksCluster.properties.nodeResourceGroup
 output kubeletIdentityObjectId string = aksCluster.properties.identityProfile.kubeletidentity.objectId
 // Empty string for UserAssigned clusters; main.bicep uses clusterIdentityPrincipalId param instead.
-output clusterPrincipalId      string = aksCluster.identity.principalId
+output clusterPrincipalId      string = identityType == 'SystemAssigned' ? aksCluster.identity.principalId : ''
 output oidcIssuerUrl           string = aksCluster.properties.oidcIssuerProfile.issuerURL
