@@ -76,6 +76,7 @@ Any parameter left commented out (or omitted) in the file will still be prompted
 7. **Managed identity** — system-assigned or user-assigned
 8. **Resource prefix** — base name for all resources (e.g. `arpio`, `myteam`)
 9. **Node pool** — VM SKU and node count (defaults: `Standard_D2s_v3`, 2 nodes)
+10. **Database (optional)** — `none`, `sql`, `postgresql`, or `cosmosdb` (see [Database](#database-optional))
 
 A summary is shown before any resources are created, with a confirmation prompt.
 
@@ -109,6 +110,11 @@ The suffix is displayed early in the run so you can note it.
 | App workload identity | `{prefix}-app-id-{suffix}` |
 | User-assigned identity (if selected) | `{prefix}-id-{suffix}` |
 | Entra admin group (if Entra auth) | `{prefix}-admins-{suffix}` |
+| SQL logical server (if selected) | `{prefix}-sql-{suffix}` |
+| Database admin group (if SQL selected) | `{prefix}-db-admins-{suffix}` |
+| PostgreSQL Flexible Server (if selected) | `{prefix}-pg-{suffix}` |
+| Cosmos DB account (if selected) | `{prefix}-cosmos-{suffix}` |
+| Database / container name (if selected) | `{prefix}-db-{suffix}` (override with `DATABASE_NAME`) |
 
 ---
 
@@ -124,6 +130,7 @@ One resource group containing all resources:
   └── Container registry
   └── Key Vault
   └── App workload identity
+  └── Database (if selected)
 ```
 
 ### `custom-network` and `private-network`
@@ -137,6 +144,7 @@ Two resource groups, mirroring Azure's own pattern for separating managed infras
   └── Key Vault
   └── App workload identity
   └── Managed identity (if user-assigned)
+  └── Database (if selected)
 
 {prefix}-infra-rg-{suffix}
   └── VNet
@@ -227,7 +235,7 @@ The script outputs everything needed to complete the setup once your app's names
 |---|---|
 | Identity name | database Entra user creation (`CREATE USER`) |
 | Client ID | Kubernetes service account annotation |
-| Principal ID | Azure role assignments (e.g. PostgreSQL Flexible Server admin) |
+| Principal ID | Azure role assignments (e.g. database admin — see [Database](#database-optional)) |
 | OIDC issuer URL | Federated credential creation |
 
 ### Completing the federation
@@ -250,7 +258,7 @@ metadata:
     azure.workload.identity/use: "true"
 ```
 
-The identity's principal ID is what you grant access to in PostgreSQL Flexible Server — add it as an Entra administrator or database user using the identity name as the username.
+If you provisioned a database via [Step 10](#database-optional), this identity is already granted admin/data access — no manual role assignment needed. Otherwise, the identity's principal ID is what you'd grant access to in your own database: add it as an Entra administrator or database user using the identity name as the username.
 
 ---
 
@@ -283,6 +291,36 @@ The script deploys an Azure Container Registry (`{prefix}acr{suffix}`) in the ma
 - After cluster creation, the script runs `az aks update --attach-acr` to grant the cluster's kubelet identity **AcrPull** — pods can pull images without embedded credentials
 
 For `private-network` clusters, public network access is disabled and a private endpoint with private DNS zone integration (`privatelink.azurecr.io`) is provisioned into the cluster VNet.
+
+---
+
+## Database (optional)
+
+Step 10 optionally provisions one database alongside the cluster: Azure SQL Database, Azure Database for PostgreSQL Flexible Server, or Azure Cosmos DB (SQL API, serverless). All three use the app workload identity for authentication — no connection string or password is ever generated, matching the same passwordless model already used for Key Vault and ACR in this demo.
+
+The database (or, for Cosmos, database + container) name is auto-generated like other resource names (`{prefix}-db-{suffix}`) unless you set `DATABASE_NAME` in a params file, which overrides it for whichever type you select. The SQL server, Postgres server, and Cosmos account names themselves are always auto-generated and cannot be overridden.
+
+The deploying user also gets admin/data access on all three, alongside the workload identity — but **the mechanism differs by type**, because Azure SQL, uniquely, only accepts a single Azure AD admin *principal*:
+
+| Type | Admin mechanism | Who gets admin |
+|---|---|---|
+| **SQL** | Azure SQL accepts only **one** AAD admin principal, so the admin is a dedicated Entra group (`{prefix}-db-admins-{suffix}`) — the same pattern used for the K8s Entra admin group. The group is set as the server's sole AAD admin with `azureADOnlyAuthentication` enabled. | Deploying user added to the group immediately; the app workload identity added once its principal ID is known (right after cluster creation). |
+| **PostgreSQL** | Flexible Server supports multiple independent AAD admins natively — no group needed. Password auth is disabled entirely (`authConfig.passwordAuth: Disabled`). | Deploying user and workload identity each get their own admin entry. |
+| **Cosmos DB** | No "admin" concept — data access is RBAC via Cosmos DB's own role assignments, referencing the built-in **Data Contributor** role. Key-based (local) auth is disabled entirely. | Deploying user and workload identity each get their own role assignment. |
+
+### Networking
+
+For `private-network` clusters, the database gets a private endpoint on the same AKS subnet used by Key Vault and ACR — no separate subnet — plus a matching private DNS zone (`privatelink.database.windows.net`, `privatelink.postgres.database.azure.com`, or `privatelink.documents.azure.com`). Public access is disabled entirely.
+
+For `managed-network` and `custom-network`, public access stays enabled. SQL and Postgres get a narrow "allow Azure services" firewall rule (`0.0.0.0`–`0.0.0.0`) so AKS egress can reach them without opening the database to the whole internet; Cosmos allows public access by default with no extra rule needed.
+
+### Completing the connection
+
+The completion summary prints the database's connection endpoint (server FQDN or Cosmos account endpoint) and which principals have access. Since auth is entirely via the already-federated workload identity (see [Workload Identity](#workload-identity)), the app only needs the endpoint — no secrets to distribute.
+
+### SQL: accessing the database as a human
+
+Because SQL's AAD admin is a group, both the deploying user and the workload identity can connect using their own Entra credentials — there's no single-admin bottleneck to work around. To add a teammate, add them to the `{prefix}-db-admins-{suffix}` group.
 
 ---
 
@@ -346,7 +384,10 @@ flexible-aks/
     │   ├── network.bicep     # VNet + subnet (custom/private configs)
     │   ├── identity.bicep    # User-assigned managed identity
     │   ├── keyvault.bicep    # Key Vault + RBAC + private endpoint
-    │   └── acr.bicep         # Container registry + RBAC + private endpoint
+    │   ├── acr.bicep         # Container registry + RBAC + private endpoint
+    │   ├── sql.bicep         # Azure SQL Database (optional) + AAD-only admin + private endpoint
+    │   ├── postgresql.bicep  # PostgreSQL Flexible Server (optional) + AAD admins + private endpoint
+    │   └── cosmosdb.bicep    # Cosmos DB (optional) + RBAC role assignments + private endpoint
     └── params/
         ├── managed-network.bicepparam
         ├── custom-network.bicepparam
@@ -382,6 +423,12 @@ If you used Entra auth, remove the admin group:
 az ad group delete --group {prefix}-admins-{suffix}
 ```
 
+If you provisioned a SQL database, also remove its admin group:
+
+```bash
+az ad group delete --group {prefix}-db-admins-{suffix}
+```
+
 ---
 
 ## Known Limitations
@@ -391,3 +438,5 @@ az ad group delete --group {prefix}-admins-{suffix}
 - **VNet address ranges are fixed defaults** — the script uses `10.0.0.0/8` for the VNet and `10.240.0.0/16` for the node subnet. Edit `bicep/modules/network.bicep` to adjust for environments with conflicting CIDR ranges.
 - **No app deployment** — `deploy-cluster.sh` provisions infrastructure only. Application deployment (including the workload identity federated credential) is handled separately.
 - **Single node pool** — the script provisions a single system node pool. Additional user node pools must be added manually via `az aks nodepool add` after deployment.
+- **Single database per deployment** — `sql` | `postgresql` | `cosmosdb` are mutually exclusive; provisioning more than one requires re-running the relevant Bicep module manually.
+- **PostgreSQL private endpoint support is newer than this demo's other private-endpoint integrations** — recommend a test deployment of `postgresql` + `private-network` before relying on it, since it hasn't been exercised against a live subscription as part of this change.

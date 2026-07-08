@@ -61,6 +61,27 @@
 # Number of nodes in the system node pool (positive integer).
 #NODE_COUNT="2"
 
+# Optional database to provision alongside the cluster.
+# Allowed: none | sql | postgresql | cosmosdb
+#   none       — no database provisioned (default)
+#   sql        — Azure SQL Database; Azure AD-only auth, no password ever
+#                created. Sole AAD admin is a dedicated Entra group
+#                containing the deploying user and the app workload identity.
+#   postgresql — Azure Database for PostgreSQL Flexible Server; Azure AD-only
+#                auth. Deploying user and app workload identity both admins.
+#   cosmosdb   — Azure Cosmos DB (SQL API, serverless); key-based auth
+#                disabled. Deploying user and app workload identity both
+#                granted the built-in Data Contributor role.
+#DATABASE_TYPE="none"
+
+# Name of the database (SQL database, Postgres database, or Cosmos
+# database/container). Ignored when DATABASE_TYPE is none. Optional — leave
+# commented to auto-generate one (e.g. arpio-db-a1b2) like other resource
+# names. Lowercase letters, numbers, and hyphens only.
+#DATABASE_NAME="appdb"
+
 # Note: the Container Registry and app workload identity names are derived
 # automatically from the prefix and suffix — no parameters are needed.
-# Both are always created as part of the deployment.
+# Both are always created as part of the deployment. The SQL server, Postgres
+# server, and Cosmos account names are derived the same way and cannot be
+# overridden — only the database/container name (DATABASE_NAME) can.

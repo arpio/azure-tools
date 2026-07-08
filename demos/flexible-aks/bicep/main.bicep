@@ -70,6 +70,31 @@ param acrName string
 @description('Name of the user-assigned managed identity for application workloads (AKS Workload Identity).')
 param appIdentityName string
 
+@description('Optional database to provision: none | sql | postgresql | cosmosdb')
+@allowed(['none', 'sql', 'postgresql', 'cosmosdb'])
+param databaseType string = 'none'
+
+@description('Name of the database (and, for Cosmos, its container) to create. Ignored when databaseType is none.')
+param databaseName string = 'appdb'
+
+@description('UPN of the deploying user. Used as the Postgres admin display name. Ignored unless databaseType is postgresql.')
+param deployingUserUpn string = ''
+
+@description('Object ID of the Entra group granted as the SQL Server AAD admin. Required when databaseType is sql.')
+param dbAdminGroupId string = ''
+
+@description('Display name of the Entra group granted as the SQL Server AAD admin. Required when databaseType is sql.')
+param dbAdminGroupName string = ''
+
+@description('Name of the SQL logical server. Required when databaseType is sql.')
+param sqlServerName string = ''
+
+@description('Name of the PostgreSQL Flexible Server. Required when databaseType is postgresql.')
+param postgresServerName string = ''
+
+@description('Name of the Cosmos DB account. Required when databaseType is cosmosdb.')
+param cosmosAccountName string = ''
+
 // ---------------------------------------------------------------------------
 // Derived values
 // ---------------------------------------------------------------------------
@@ -165,6 +190,57 @@ module acr './modules/acr.bicep' = {
 }
 
 // ---------------------------------------------------------------------------
+// Database module (optional)
+// ---------------------------------------------------------------------------
+// At most one of these deploys, based on databaseType. All three grant the
+// app workload identity admin/data access; see each module's header comment
+// for why the admin mechanism differs between SQL, Postgres, and Cosmos.
+
+module sqlDb './modules/sql.bicep' = if (databaseType == 'sql') {
+  name: 'sql-database'
+  params: {
+    sqlServerName:    sqlServerName
+    databaseName:     databaseName
+    location:         location
+    isPrivateNetwork: isPrivate
+    subnetId:         effectiveSubnetId
+    vnetId:           vnetId
+    aadAdminGroupId:   dbAdminGroupId
+    aadAdminGroupName: dbAdminGroupName
+  }
+}
+
+module postgresDb './modules/postgresql.bicep' = if (databaseType == 'postgresql') {
+  name: 'postgres-database'
+  params: {
+    serverName:                   postgresServerName
+    databaseName:                 databaseName
+    location:                     location
+    isPrivateNetwork:             isPrivate
+    subnetId:                     effectiveSubnetId
+    vnetId:                       vnetId
+    workloadIdentityPrincipalId:  appIdentity.outputs.identityPrincipalId
+    workloadIdentityName:         appIdentity.outputs.identityName
+    deployingUserPrincipalId:     deployingUserPrincipalId
+    deployingUserUpn:             deployingUserUpn
+  }
+}
+
+module cosmosDb './modules/cosmosdb.bicep' = if (databaseType == 'cosmosdb') {
+  name: 'cosmos-database'
+  params: {
+    accountName:                  cosmosAccountName
+    databaseName:                 databaseName
+    location:                     location
+    isPrivateNetwork:             isPrivate
+    subnetId:                     effectiveSubnetId
+    vnetId:                       vnetId
+    workloadIdentityPrincipalId:  appIdentity.outputs.identityPrincipalId
+    deployingUserPrincipalId:     deployingUserPrincipalId
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Outputs
 // ---------------------------------------------------------------------------
 
@@ -177,5 +253,9 @@ output acrName                string = acr.outputs.acrName
 output acrLoginServer         string = acr.outputs.acrLoginServer
 output oidcIssuerUrl          string = cluster.outputs.oidcIssuerUrl
 output appIdentityName        string = appIdentity.outputs.identityName
+output databaseType           string = databaseType
+output sqlServerFqdn          string = sqlDb.?outputs.serverFqdn ?? ''
+output postgresServerFqdn     string = postgresDb.?outputs.serverFqdn ?? ''
+output cosmosEndpoint         string = cosmosDb.?outputs.endpoint ?? ''
 output appIdentityClientId    string = appIdentity.outputs.identityClientId
 output appIdentityPrincipalId string = appIdentity.outputs.identityPrincipalId

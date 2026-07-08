@@ -133,6 +133,68 @@ derive_suffix() {
   echo -n "$raw" | openssl dgst -sha256 | awk '{print $2}' | cut -c1-4
 }
 
+ensure_entra_group() {
+  # ensure_entra_group <out_var> <group_name> — creates the group if it
+  # doesn't exist, or reuses it. Sets <out_var> to the group's object ID.
+  local out_var="$1"
+  local group_name="$2"
+  local group_id
+
+  info "Checking for existing Entra group: ${group_name}"
+  group_id=$(az ad group list \
+    --filter "displayName eq '${group_name}'" \
+    --query "[0].id" -o tsv 2>/dev/null | tr -d '\r' || true)
+
+  if [[ -n "$group_id" ]]; then
+    warn "Entra group '${group_name}' already exists — reusing (${group_id})."
+  else
+    info "Creating Entra group: ${group_name}"
+    group_id=$(az ad group create \
+      --display-name "$group_name" \
+      --mail-nickname "$group_name" \
+      --query id -o tsv | tr -d '\r')
+    [[ -n "$group_id" ]] || { error "Failed to create Entra group '${group_name}'."; exit 1; }
+    success "Created group: ${group_name} (${group_id})"
+  fi
+
+  printf -v "$out_var" '%s' "$group_id"
+}
+
+ensure_entra_group_member() {
+  # ensure_entra_group_member <group_id> <member_id> <member_label> — adds
+  # <member_id> to the group if not already a member. Idempotent.
+  local group_id="$1"
+  local member_id="$2"
+  local member_label="$3"
+  local already_member add_err
+
+  info "Adding ${member_label} to group..."
+  already_member=$(az ad group member check \
+    --group "$group_id" \
+    --member-id "$member_id" \
+    --query value -o tsv 2>/dev/null | tr -d '\r' || echo "false")
+
+  if [[ "$already_member" == "true" ]]; then
+    success "${member_label} is already a member — skipping."
+  elif ! add_err=$(az ad group member add \
+      --group "$group_id" \
+      --member-id "$member_id" 2>&1); then
+    if echo "$add_err" | grep -qi "already exist"; then
+      success "${member_label} is already a member — skipping."
+    else
+      echo "$add_err" >&2
+      error "Failed to add ${member_label} to the group."
+      warn "This typically requires 'Group.ReadWrite.All' or 'Directory.ReadWrite.All' in Entra ID."
+      warn "Ask your tenant admin to grant those permissions, then run manually:"
+      echo -e "    az ad group member add --group \"${group_id}\" --member-id \"${member_id}\""
+      exit 1
+    fi
+  else
+    echo "$add_err"
+    success "Added ${member_label}."
+  fi
+}
+
 # -----------------------------------------------------------------------------
 # Params file — load and validate
 # -----------------------------------------------------------------------------
@@ -192,6 +254,18 @@ if [[ -n "$PARAMS_FILE" ]]; then
   if [[ -n "${PREFIX:-}" ]]; then
     [[ "$PREFIX" =~ ^[a-z][a-z0-9]+$ ]] || {
       error "PREFIX must be 2+ characters, lowercase letters and numbers only (no hyphens). Example: arpio, myteam, staging."
+      exit 1
+    }
+  fi
+  if [[ -n "${DATABASE_TYPE:-}" ]]; then
+    [[ "$DATABASE_TYPE" =~ ^(none|sql|postgresql|cosmosdb)$ ]] || {
+      error "DATABASE_TYPE must be: none | sql | postgresql | cosmosdb"
+      exit 1
+    }
+  fi
+  if [[ -n "${DATABASE_NAME:-}" ]]; then
+    [[ "$DATABASE_NAME" =~ ^[a-z][a-z0-9-]{1,62}$ ]] || {
+      error "DATABASE_NAME must be 2+ characters, lowercase letters, numbers, and hyphens only, starting with a letter."
       exit 1
     }
   fi
@@ -518,6 +592,20 @@ KV_NAME="${KV_PREFIX}-kv-${SUFFIX}"
 ACR_PREFIX="${PREFIX:0:43}"
 ACR_NAME="${ACR_PREFIX}acr${SUFFIX}"
 
+# Database resource names — computed unconditionally (cheap string ops), only
+# the one matching DATABASE_TYPE (chosen in Step 10) actually gets deployed.
+# Each is truncated to leave room for its suffix, matching that service's max
+# resource-name length.
+SQL_SERVER_NAME="${PREFIX:0:50}-sql-${SUFFIX}"
+POSTGRES_SERVER_NAME="${PREFIX:0:51}-pg-${SUFFIX}"
+COSMOS_ACCOUNT_NAME="${PREFIX:0:32}-cosmos-${SUFFIX}"
+DB_ADMIN_GROUP_NAME="${PREFIX}-db-admins-${SUFFIX}"
+
+# Database/container name — same across SQL, Postgres, and Cosmos since only
+# one is ever deployed at a time. Override via DATABASE_NAME in a params file;
+# otherwise derived like the other resource names above.
+DATABASE_NAME="${DATABASE_NAME:-${PREFIX}-db-${SUFFIX}}"
+
 echo ""
 info "Derived resource names:"
 echo "  Suffix:            ${SUFFIX}"
@@ -569,6 +657,62 @@ fi
 success "Node pool: ${NODE_COUNT}x ${VM_SKU}"
 
 # -----------------------------------------------------------------------------
+# Step 10: Database (optional)
+# -----------------------------------------------------------------------------
+
+header "Step 10: Database (optional)"
+
+_db_from_params=false
+if [[ -n "${DATABASE_TYPE:-}" ]]; then
+  _db_from_params=true
+else
+  cat <<EOF
+
+  ${BOLD}none${RESET} (default)
+    No database is provisioned.
+
+  ${BOLD}sql${RESET}
+    Azure SQL Database. Azure AD-only auth — no password is ever created.
+    The sole AAD admin is a dedicated Entra group containing the deploying
+    user and the app workload identity (Azure SQL allows only one admin
+    principal, so a group is used to cover both).
+
+  ${BOLD}postgresql${RESET}
+    Azure Database for PostgreSQL Flexible Server. Azure AD-only auth —
+    no password is ever created. The deploying user and the app workload
+    identity are both granted admin directly.
+
+  ${BOLD}cosmosdb${RESET}
+    Azure Cosmos DB (SQL API, serverless). Key-based auth disabled — access
+    is via Cosmos DB's own RBAC. The deploying user and the app workload
+    identity are both granted the built-in Data Contributor role.
+
+EOF
+  pick_from_list DATABASE_TYPE "Select a database to provision:" \
+    "none" \
+    "sql" \
+    "postgresql" \
+    "cosmosdb"
+fi
+
+case "$DATABASE_TYPE" in
+  none)       DATABASE_TYPE_DESC="no database provisioned" ;;
+  sql)        DATABASE_TYPE_DESC="Azure SQL Database, Azure AD-only auth" ;;
+  postgresql) DATABASE_TYPE_DESC="Azure Database for PostgreSQL Flexible Server, Azure AD-only auth" ;;
+  cosmosdb)   DATABASE_TYPE_DESC="Azure Cosmos DB (SQL API, serverless), key-based auth disabled" ;;
+  *) error "Invalid database type: '${DATABASE_TYPE}'. Allowed: none | sql | postgresql | cosmosdb"; exit 1 ;;
+esac
+
+[[ "$_db_from_params" == "true" ]] && from_params "Database" "${DATABASE_TYPE} — ${DATABASE_TYPE_DESC}"
+
+if [[ "$DATABASE_TYPE" == "none" ]]; then
+  success "Database: none"
+else
+  success "Database: ${DATABASE_TYPE} — ${DATABASE_TYPE_DESC}"
+  info "Database name: ${DATABASE_NAME}"
+fi
+
+# -----------------------------------------------------------------------------
 # Summary + Confirmation
 # -----------------------------------------------------------------------------
 
@@ -615,6 +759,13 @@ if [[ "$K8S_AUTH" == "entra" ]]; then
     echo -e "  ${BOLD}Entra admin group:${RESET}  ${ENTRA_GROUP_NAME}"
   else
     echo -e "  ${BOLD}Entra admin group:${RESET}  none (configure manually after deployment)"
+  fi
+fi
+if [[ "$DATABASE_TYPE" != "none" ]]; then
+  echo -e "  ${BOLD}Database:${RESET}           ${DATABASE_TYPE} — ${DATABASE_TYPE_DESC}"
+  echo -e "  ${BOLD}Database name:${RESET}      ${DATABASE_NAME}"
+  if [[ "$DATABASE_TYPE" == "sql" ]]; then
+    echo -e "  ${BOLD}DB admin group:${RESET}     ${DB_ADMIN_GROUP_NAME}"
   fi
 fi
 
@@ -690,49 +841,24 @@ ENTRA_GROUP_ID=""
 
 if [[ "$ENTRA_ADMIN_ENABLED" == "true" ]]; then
   header "Creating Entra Admin Group"
+  ensure_entra_group ENTRA_GROUP_ID "$ENTRA_GROUP_NAME"
+  ensure_entra_group_member "$ENTRA_GROUP_ID" "$CURRENT_USER_ID" "$CURRENT_USER_UPN"
+fi
 
-  info "Checking for existing Entra group: ${ENTRA_GROUP_NAME}"
-  ENTRA_GROUP_ID=$(az ad group list \
-    --filter "displayName eq '${ENTRA_GROUP_NAME}'" \
-    --query "[0].id" -o tsv 2>/dev/null | tr -d '\r' || true)
+# -----------------------------------------------------------------------------
+# Database Admin Group (SQL only)
+# -----------------------------------------------------------------------------
+# Azure SQL accepts only one Azure AD admin principal, so a dedicated group is
+# used to hold both the deploying user and (later, once its principal ID is
+# known) the app workload identity. Postgres and Cosmos don't need this — they
+# grant both principals access directly.
 
-  if [[ -n "$ENTRA_GROUP_ID" ]]; then
-    warn "Entra group '${ENTRA_GROUP_NAME}' already exists — reusing (${ENTRA_GROUP_ID})."
-  else
-    info "Creating Entra group: ${ENTRA_GROUP_NAME}"
-    ENTRA_GROUP_ID=$(az ad group create \
-      --display-name "$ENTRA_GROUP_NAME" \
-      --mail-nickname "$ENTRA_GROUP_NAME" \
-      --query id -o tsv | tr -d '\r')
-    [[ -n "$ENTRA_GROUP_ID" ]] || { error "Failed to create Entra group '${ENTRA_GROUP_NAME}'."; exit 1; }
-    success "Created group: ${ENTRA_GROUP_NAME} (${ENTRA_GROUP_ID})"
-  fi
+DB_ADMIN_GROUP_ID=""
 
-  info "Adding current user to group..."
-  ALREADY_MEMBER=$(az ad group member check \
-    --group "$ENTRA_GROUP_ID" \
-    --member-id "$CURRENT_USER_ID" \
-    --query value -o tsv 2>/dev/null | tr -d '\r' || echo "false")
-
-  if [[ "$ALREADY_MEMBER" == "true" ]]; then
-    success "${CURRENT_USER_UPN} is already a member of ${ENTRA_GROUP_NAME} — skipping."
-  elif ! ADD_ERR=$(az ad group member add \
-      --group "$ENTRA_GROUP_ID" \
-      --member-id "$CURRENT_USER_ID" 2>&1); then
-    if echo "$ADD_ERR" | grep -qi "already exist"; then
-      success "${CURRENT_USER_UPN} is already a member of ${ENTRA_GROUP_NAME} — skipping."
-    else
-      echo "$ADD_ERR" >&2
-      error "Failed to add ${CURRENT_USER_UPN} to ${ENTRA_GROUP_NAME}."
-      warn "This typically requires 'Group.ReadWrite.All' or 'Directory.ReadWrite.All' in Entra ID."
-      warn "Ask your tenant admin to grant those permissions, then run manually:"
-      echo -e "    az ad group member add --group \"${ENTRA_GROUP_ID}\" --member-id \"${CURRENT_USER_ID}\""
-      exit 1
-    fi
-  else
-    echo "$ADD_ERR"
-    success "Added ${CURRENT_USER_UPN} to ${ENTRA_GROUP_NAME}"
-  fi
+if [[ "$DATABASE_TYPE" == "sql" ]]; then
+  header "Creating Database Admin Group"
+  ensure_entra_group DB_ADMIN_GROUP_ID "$DB_ADMIN_GROUP_NAME"
+  ensure_entra_group_member "$DB_ADMIN_GROUP_ID" "$CURRENT_USER_ID" "$CURRENT_USER_UPN"
 fi
 
 # -----------------------------------------------------------------------------
@@ -860,6 +986,31 @@ BICEP_PARAMS+=(
   deployingUserPrincipalId="$CURRENT_USER_ID"
 )
 
+if [[ "$DATABASE_TYPE" != "none" ]]; then
+  BICEP_PARAMS+=(
+    databaseType="$DATABASE_TYPE"
+    databaseName="$DATABASE_NAME"
+  )
+  case "$DATABASE_TYPE" in
+    sql)
+      BICEP_PARAMS+=(
+        sqlServerName="$SQL_SERVER_NAME"
+        dbAdminGroupId="$DB_ADMIN_GROUP_ID"
+        dbAdminGroupName="$DB_ADMIN_GROUP_NAME"
+      )
+      ;;
+    postgresql)
+      BICEP_PARAMS+=(
+        postgresServerName="$POSTGRES_SERVER_NAME"
+        deployingUserUpn="$CURRENT_USER_UPN"
+      )
+      ;;
+    cosmosdb)
+      BICEP_PARAMS+=(cosmosAccountName="$COSMOS_ACCOUNT_NAME")
+      ;;
+  esac
+fi
+
 if [[ "$NETWORK_CONFIG" == "private-network" ]]; then
   BICEP_PARAMS+=(vnetId="$VNET_ID")
 fi
@@ -951,6 +1102,44 @@ APP_IDENTITY_PRINCIPAL_ID=$(az identity show \
   --query principalId -o tsv | tr -d '\r')
 
 # -----------------------------------------------------------------------------
+# Database follow-up
+# -----------------------------------------------------------------------------
+# For SQL, the workload identity can only be added to the DB admin group now
+# that its principal ID is known. For all types, fetch the connection
+# endpoint for the completion summary.
+
+DB_ENDPOINT=""
+
+if [[ "$DATABASE_TYPE" == "sql" ]]; then
+  header "Adding Workload Identity to Database Admin Group"
+  ensure_entra_group_member "$DB_ADMIN_GROUP_ID" "$APP_IDENTITY_PRINCIPAL_ID" "$APP_IDENTITY_NAME"
+fi
+
+case "$DATABASE_TYPE" in
+  sql)
+    DB_ENDPOINT=$(az sql server show \
+      --name "$SQL_SERVER_NAME" \
+      --resource-group "$RG_MAIN" \
+      --query fullyQualifiedDomainName -o tsv \
+      --only-show-errors | tr -d '\r')
+    ;;
+  postgresql)
+    DB_ENDPOINT=$(az postgres flexible-server show \
+      --name "$POSTGRES_SERVER_NAME" \
+      --resource-group "$RG_MAIN" \
+      --query fullyQualifiedDomainName -o tsv \
+      --only-show-errors | tr -d '\r')
+    ;;
+  cosmosdb)
+    DB_ENDPOINT=$(az cosmosdb show \
+      --name "$COSMOS_ACCOUNT_NAME" \
+      --resource-group "$RG_MAIN" \
+      --query documentEndpoint -o tsv \
+      --only-show-errors | tr -d '\r')
+    ;;
+esac
+
+# -----------------------------------------------------------------------------
 # kubeconfig
 # -----------------------------------------------------------------------------
 
@@ -1025,6 +1214,27 @@ if [[ "$NETWORK_CONFIG" != "managed-network" ]]; then
   echo -e "  ${BOLD}Infra RG:${RESET}       ${RG_INFRA}"
 fi
 
+if [[ "$DATABASE_TYPE" != "none" ]]; then
+  cat <<DB_EOF
+
+  ${BOLD}${CYAN}Database (${DATABASE_TYPE}):${RESET}
+  ${BOLD}Endpoint:${RESET}    ${DB_ENDPOINT}
+  ${BOLD}Database:${RESET}    ${DATABASE_NAME}
+DB_EOF
+  case "$DATABASE_TYPE" in
+    sql)
+      echo -e "  ${BOLD}Admin:${RESET}       Entra group ${DB_ADMIN_GROUP_NAME} (deploying user + app workload identity)"
+      ;;
+    postgresql)
+      echo -e "  ${BOLD}Admins:${RESET}      ${CURRENT_USER_UPN}, ${APP_IDENTITY_NAME}"
+      ;;
+    cosmosdb)
+      echo -e "  ${BOLD}Data access:${RESET} ${CURRENT_USER_UPN}, ${APP_IDENTITY_NAME} (Cosmos DB Built-in Data Contributor)"
+      ;;
+  esac
+  info "The app connects using the workload identity federated above — no connection string or password needed."
+fi
+
 if [[ "$NETWORK_CONFIG" == "private-network" ]]; then
   cat <<PRIVATE_EOF
 
@@ -1053,6 +1263,7 @@ if [[ "$NETWORK_CONFIG" == "private-network" ]]; then
   • Install the Arpio private delegate inside the cluster VNet.
     The public Arpio delegate cannot reach private API endpoints.
   • Key Vault public access is disabled — manage secrets from within the VNet.
+$([[ "$DATABASE_TYPE" != "none" ]] && echo "  • Database public access is disabled — it's reachable only via the private endpoint inside the VNet.")
 
 PRIVATE_EOF
 else
