@@ -209,3 +209,10 @@ __marimo__/
 .DS_store
 .vscode
 demos/lamp-app/infrastructure/deployment-outputs.json
+
+# Claude Code
+.claude/settings.local.json
+
+# AKS deployment parameter files (environment-specific, not for version control)
+# See demos/flexible-aks/deploy-cluster.params.example for the template.
+*.params
