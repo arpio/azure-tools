@@ -221,10 +221,10 @@ App 1 ↔ App 2 (via Hub — no direct peering)
 
 ## Cost Estimates
 
-### Hub-Spoke Only (~$460/month, US East)
+### Hub-Spoke Only (~$495/month, US East)
 | Resource | Cost |
 |----------|------|
-| VPN Gateway (VpnGw1) | ~$140 |
+| VPN Gateway (VpnGw1AZ) | ~$175 |
 | Azure Bastion (Standard) | ~$140 |
 | VMs (VMSS + 2 VMs) | ~$150 |
 | Load Balancer (Standard) | ~$20 |

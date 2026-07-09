@@ -28,27 +28,15 @@ param tags object = {
 }
 
 // ============================================
-// Reference the existing hub VNet
-// (already recovered by Arpio — we only add the gateway)
+// Reference existing hub VNet and VPN Public IP
+// (both recovered by Arpio — we only add the gateway)
 // ============================================
 resource hubVnet 'Microsoft.Network/virtualNetworks@2023-05-01' existing = {
   name: '${resourcePrefix}-hub-vnet'
 }
 
-// ============================================
-// Public IP for VPN Gateway
-// ============================================
-resource vpnGatewayPublicIp 'Microsoft.Network/publicIPAddresses@2023-05-01' = {
+resource vpnGatewayPublicIp 'Microsoft.Network/publicIPAddresses@2023-05-01' existing = {
   name: '${resourcePrefix}-vpn-pip'
-  location: location
-  tags: tags
-  sku: {
-    name: 'Standard'
-  }
-  properties: {
-    publicIPAllocationMethod: 'Static'
-    publicIPAddressVersion: 'IPv4'
-  }
 }
 
 // ============================================
@@ -75,8 +63,8 @@ resource vpnGateway 'Microsoft.Network/virtualNetworkGateways@2023-05-01' = {
       }
     ]
     sku: {
-      name: 'VpnGw1'
-      tier: 'VpnGw1'
+      name: 'VpnGw1AZ'
+      tier: 'VpnGw1AZ'
     }
     gatewayType: 'Vpn'
     vpnType: 'RouteBased'

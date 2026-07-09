@@ -153,6 +153,7 @@ resource vpnGatewayPublicIp 'Microsoft.Network/publicIPAddresses@2023-05-01' = {
   sku: {
     name: 'Standard'
   }
+  zones: ['1', '2', '3']
   properties: {
     publicIPAllocationMethod: 'Static'
     publicIPAddressVersion: 'IPv4'
@@ -180,8 +181,8 @@ resource vpnGateway 'Microsoft.Network/virtualNetworkGateways@2023-05-01' = {
       }
     ]
     sku: {
-      name: 'VpnGw1'
-      tier: 'VpnGw1'
+      name: 'VpnGw1AZ'
+      tier: 'VpnGw1AZ'
     }
     gatewayType: 'Vpn'
     vpnType: 'RouteBased'
