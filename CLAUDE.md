@@ -16,6 +16,7 @@ demos/
   hubandspoke/          # Hub-spoke topology (subscription-scope)
   lamp-app/             # LAMP stack (AppGW + LB) for Network Sandbox testing
   guestbook-AzureSQL/   # Windows + IIS + Azure SQL (guestbook)
+  WebAppsAndFunctions/  # App Service + Functions + Container Apps + Key Vault (Demo 05)
 ```
 
 ## Cross-Cutting Conventions
@@ -172,6 +173,46 @@ cd demos/lamp-app/infrastructure && SQL_ADMIN_PASS='<password>' ./deploy.sh
 
 **Gotchas:**
 - **DB login may fail on fresh deploy** due to timing — the VM tries to connect before the DB is fully ready. It resolves on its own; no retry logic needed.
+
+---
+
+## Demo: WebAppsAndFunctions (App Service + Functions + Container Apps)
+
+Covers the three main Azure PaaS compute models Arpio protects: a Flask Web App dashboard, a Python Function App, and a Container App background worker, all sharing one Key Vault and one user-assigned managed identity.
+
+**Architecture:**
+- **Web App** (Linux B1, Python 3.12) → Flask dashboard; calls the Function App, reads Key Vault, reads the Container App config via ARM, loads the Arpio logo from blob
+- **Function App** (Linux B1, Python 3.12, v1 model) → `/api/status` reads Key Vault secrets
+- **Container App** (busybox heartbeat, no ingress) in a Container Apps Environment + Log Analytics
+- **Key Vault** (RBAC, 3 secrets: `demo-secret`, `app-region`, `storage-blob-url`)
+- Two storage accounts: public blob (logo) and Function App backing store
+- Deployed to `eastus2`; all resources tagged `ArpioDemo05: True`
+
+**Deployment flow:** Single Bicep deployment. `loadTextContent()` embeds the app code, and `deploymentScripts` resources bundle Python dependencies and push the zip to each app via Kudu `/api/zip/site/wwwroot/`. A code-hash `forceUpdateTag` re-runs the push only when code changes.
+
+**Deploy:**
+```bash
+cd demos/WebAppsAndFunctions
+az group create -n wad05-rg -l eastus2
+az deployment group create -n wad05-deploy -g wad05-rg \
+  --template-file azuredeploy.bicep --parameters azuredeploy.bicepparam
+az deployment group show -g wad05-rg -n wad05-deploy \
+  --query properties.outputs.webAppUrl.value -o tsv
+
+# Local testing of the dashboard
+cd webapp && bash run-local.sh   # http://localhost:8080
+```
+
+**Key files:**
+- `demos/WebAppsAndFunctions/azuredeploy.bicep` - All resources + deployment scripts
+- `demos/WebAppsAndFunctions/webapp/app.py` - Flask dashboard
+- `demos/WebAppsAndFunctions/function-app/status/__init__.py` - Function App `/api/status`
+- `demos/WebAppsAndFunctions/webapp/deploy-app.sh`, `function-app/deploy-function.sh` - Standalone code pushes (optional)
+
+**Gotchas:**
+- **Function App host ID collision on recovery (AZFD0004):** the Functions runtime derives its host ID from the first 32 chars of the app name, so a recovered app named `<source>-dr` collides with the source's replicated `azure-webjobs-hosts/` blobs. Arpio sets `AzureFunctionsWebHost__hostid` (lowercase `id`, the key is case-sensitive on Linux) on the recovered app to avoid this.
+- **`CONTAINER_APP_ID` app setting** holds a full ARM resource ID and must be translated case-insensitively during recovery.
+- After recovery, `storage-blob-url` in Key Vault is translated to the recovered blob account; `app-region` uses an ARM location resource ID so Arpio can translate it.
 
 ---
 
