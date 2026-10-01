@@ -149,7 +149,9 @@ if [ $TABLE_OK -ne 1 ]; then
 fi
 
 # --------- Outputs ---------
-VM_IP=$(az network public-ip show -g "$RESOURCE_GROUP" -n "$IP_NAME" --query ipAddress -o tsv 2>/dev/null || echo "")
+# read the values back from the Bicep deployment outputs (the resource names are generated in sqlvm-rg.bicep)
+VM_IP=$(az deployment sub show --name "$RESOURCE_GROUP" --query properties.outputs.publicIPAddress.value -o tsv 2>/dev/null || echo "")
+KV_NAME=$(az deployment sub show --name "$RESOURCE_GROUP" --query properties.outputs.keyVaultName.value -o tsv 2>/dev/null || echo "")
 CONNSTR="Server=tcp:${SQL_FQDN},1433;Initial Catalog=${SQL_DB};User ID=${SQL_ADMIN};Password=${SQL_PASSWORD};Encrypt=True;"
 
 echo ""
